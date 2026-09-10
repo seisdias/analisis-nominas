@@ -73,17 +73,50 @@ class DatabaseService:
         retribuciones_integras = getattr(doc, 'retribuciones_integras', 0.0)
         retenciones_practicadas = getattr(doc, 'retenciones_practicadas', 0.0)
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO documentos (
                 id, anio, mes, periodo, empresa, cif, tipo,
                 salario_base, total_devengado, total_deducir, liquido_percibir,
-                retribuciones_integras, retenciones_practicadas, observaciones, es_procesable, payload
+                retribuciones_integras, retenciones_practicadas,
+                observaciones, es_procesable, payload
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            doc.id, doc.anio, doc.mes, doc.periodo, doc.empresa, doc.cif, doc.tipo.value,
-            salario_base, total_devengado, total_deducir, liquido_percibir,
-            retribuciones_integras, retenciones_practicadas, doc.observaciones, int(doc.es_procesable), json.dumps(asdict(doc), ensure_ascii=False)
-        ))
+            ON CONFLICT(id) DO UPDATE SET
+                anio = excluded.anio,
+                mes = excluded.mes,
+                periodo = excluded.periodo,
+                empresa = excluded.empresa,
+                cif = excluded.cif,
+                tipo = excluded.tipo,
+                salario_base = excluded.salario_base,
+                total_devengado = excluded.total_devengado,
+                total_deducir = excluded.total_deducir,
+                liquido_percibir = excluded.liquido_percibir,
+                retribuciones_integras = excluded.retribuciones_integras,
+                retenciones_practicadas = excluded.retenciones_practicadas,
+                observaciones = excluded.observaciones,
+                es_procesable = excluded.es_procesable,
+                payload = excluded.payload
+            """,
+            (
+                doc.id,
+                doc.anio,
+                doc.mes,
+                doc.periodo,
+                doc.empresa,
+                doc.cif,
+                doc.tipo.value,
+                salario_base,
+                total_devengado,
+                total_deducir,
+                liquido_percibir,
+                retribuciones_integras,
+                retenciones_practicadas,
+                doc.observaciones,
+                int(doc.es_procesable),
+                json.dumps(asdict(doc), ensure_ascii=False),
+            ),
+        )
         conn.commit()
         if not self._shared_conn:
             conn.close()

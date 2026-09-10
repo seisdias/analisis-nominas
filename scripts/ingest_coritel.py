@@ -2,14 +2,12 @@
 import glob
 import os
 
-import pdfplumber
-
-from src.parsers.coritel_parser import CoritelParser
 from src.services.database_service import DatabaseService
+from src.services.ingestion_service import parse_nomina_pdf
 
 
 def run_ingestion():
-    pdf_dir = "data/testdata/coritel"
+    pdf_dir = "data/test/coritel"
     db_path = "data/runtime/nominas.sqlite"
 
     pdf_files = sorted(glob.glob(os.path.join(pdf_dir, "*.pdf")))
@@ -20,7 +18,6 @@ def run_ingestion():
 
     print(f"🚀 Iniciando procesamiento de {len(pdf_files)} PDFs...\n")
 
-    parser = CoritelParser()
     db_service = DatabaseService(db_path=db_path)
 
     db_service.init_db()
@@ -31,10 +28,7 @@ def run_ingestion():
     for pdf_path in pdf_files:
         filename = os.path.basename(pdf_path)
         try:
-            with pdfplumber.open(pdf_path) as pdf:
-                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-
-            nomina = parser.parse(text, filename=filename)
+            nomina = parse_nomina_pdf(pdf_path, filename=filename)
 
             # Validación de cuadre matemático (Tolerancia: 0.02€)
             calculado = round(nomina.total_devengado - nomina.total_deducir, 2)
