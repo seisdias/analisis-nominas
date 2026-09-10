@@ -46,3 +46,6 @@ pdfs_reales/
 *~
 logs/
 *.[lL][oO][gG]
+
+# Datos locales y privados
+/data/

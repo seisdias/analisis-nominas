@@ -6,14 +6,14 @@ import pytest
 from src.parsers.ineco_parser import InecoParser
 
 # Buscar rutas posibles
-INECO_DIR = Path("data/testdata/ineco")
+INECO_DIR = Path("data/test/ineco")
 if not INECO_DIR.exists():
-    INECO_DIR = Path("data/testdata/ineco_parser")
+    INECO_DIR = Path("data/test/ineco_parser")
 
 INECO_FILES = sorted(list(INECO_DIR.glob("*.pdf"))) if INECO_DIR.exists() else []
 
 
-@pytest.mark.skipif(len(INECO_FILES) == 0, reason="No se encontraron PDFs de prueba reales en data/testdata/")
+@pytest.mark.skipif(len(INECO_FILES) == 0, reason="No se encontraron PDFs de prueba reales en data/test/")
 @pytest.mark.parametrize("pdf_path", INECO_FILES)
 def test_parse_ineco_pdf_real(pdf_path):
     text = ""

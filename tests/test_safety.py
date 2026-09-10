@@ -1,5 +1,4 @@
 """Synthetic regression tests for the public bootstrap's safety boundaries."""
-import sqlite3
 
 import pytest
 
@@ -20,9 +19,15 @@ def test_missing_period_is_rejected(parser):
         parser.parse("", filename="synthetic.pdf")
 
 
-def test_coritel_never_fabricates_payroll():
-    with pytest.raises(NotImplementedError):
-        CoritelParser().parse("Synthetic unsupported document", "synthetic.pdf")
+def test_coritel_never_fabricates_payroll() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Missing Coritel payroll period",
+    ):
+        CoritelParser().parse(
+            "Synthetic unsupported document",
+            "synthetic.pdf",
+        )
 
 
 @pytest.mark.parametrize("text", ["unknown company", "alten altran"])
@@ -36,7 +41,7 @@ def test_factory_explicit_registry(company):
     assert ParserFactory().obtener_parser(company) is not None
 
 
-def test_storage_preserves_details_and_rejects_duplicates():
+def test_storage_preserves_details_and_updates_duplicates():
     service = DatabaseService(":memory:")
     service.init_db()
     assert service.obtener_todos() == []
@@ -47,8 +52,16 @@ def test_storage_preserves_details_and_rejects_duplicates():
     saved = service.obtener_todos()[0]
     assert saved["complementos"] == 12.5
     assert saved["irpf_porcentaje"] == 10
-    with pytest.raises(sqlite3.IntegrityError):
-        service.guardar_documento(doc)
+
+    doc.complementos = 25.0
+    service.guardar_documento(doc)
+
+    saved_docs = service.obtener_todos()
+
+    assert len(saved_docs) == 1
+    assert saved_docs[0]["id"] == "synthetic"
+    assert saved_docs[0]["complementos"] == 25.0
+
     assert len(service.obtener_todos()) == 1
 
 

@@ -5,7 +5,7 @@ import pytest
 
 from src.parsers.insis_parser import InsisParser
 
-INSIS_DIR = Path("data/testdata/insis4")
+INSIS_DIR = Path("data/test/insis4")
 INSIS_FILES = sorted(list(INSIS_DIR.glob("*.pdf"))) if INSIS_DIR.exists() else []
 
 
