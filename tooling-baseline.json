@@ -1,0 +1,9 @@
+{
+  "ruff": [],
+  "mypy": [
+    "app.py:4:1: error: Library stubs not installed for \"pandas\"  [import-untyped]",
+    "app.py:5:1: error: Skipping analyzing \"plotly\": module is installed, but missing library stubs or py.typed marker  [import-untyped]",
+    "app.py:5:1: error: Skipping analyzing \"plotly.express\": module is installed, but missing library stubs or py.typed marker  [import-untyped]",
+    "app.py:6:1: error: Skipping analyzing \"plotly.graph_objects\": module is installed, but missing library stubs or py.typed marker  [import-untyped]"
+  ]
+}

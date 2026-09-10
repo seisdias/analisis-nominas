@@ -1,0 +1,48 @@
+# Python and tooling
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+# IDE
+.idea/
+.DS_Store
+# Private documents, runtime and exports
+/data/testdata/
+/data/runtime/
+/data/private/
+/private/
+exports/
+backups/
+/data/exports/
+/data/backups/
+pdfs_reales/
+*.[pP][dD][fF]
+# Databases and derived backups
+*.[sS][qQ][lL][iI][tT][eE]
+*.[sS][qQ][lL][iI][tT][eE]3
+*.[dD][bB]
+*.[sS][qQ][lL][iI][tT][eE]-*
+*.[sS][qQ][lL][iI][tT][eE]3-*
+*.[dD][bB]-*
+*.[sS][qQ][lL][iI][tT][eE].*
+*.[sS][qQ][lL][iI][tT][eE]3.*
+*.[dD][bB].*
+*.[bB][aA][kK]
+*.[bB][aA][kK].*
+*.[bB][aA][cC][kK][uU][pP]*
+*.[dD][uU][mM][pP]*
+# Secrets belong in private/; public images and tables remain allowed
+.env*
+.streamlit/secrets.toml
+# Temporary output
+*.tmp
+*.temp
+*.swp
+*~
+logs/
+*.[lL][oO][gG]
