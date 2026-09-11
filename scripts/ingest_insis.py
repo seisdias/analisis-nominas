@@ -1,62 +1,63 @@
-# -*- coding: utf-8 -*-
-import glob
-import os
+"""Ingest local INSIS4 payrolls; use --db to select an isolated SQLite database."""
 
-import pdfplumber
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
 
-from src.parsers.insis_parser import InsisParser
 from src.services.database_service import DatabaseService
+from src.services.ingestion_service import NoExtractableTextError, parse_nomina_pdf
 
 
-def run_ingestion():
-    pdf_dir = "data/testdata/insis4"
-    db_path = "data/runtime/nominas.sqlite"
+@dataclass
+class IngestionResult:
+    processed: int = 0
+    omitted: int = 0
+    failed: int = 0
 
-    pdf_files = sorted(glob.glob(os.path.join(pdf_dir, "*.pdf")))
 
-    if not pdf_files:
-        print(f"❌ No se encontraron archivos PDF en '{pdf_dir}'.")
-        return
-
-    print(f"🚀 Iniciando procesamiento de {len(pdf_files)} PDFs de Insis4...\n")
-
-    parser = InsisParser()
-    db_service = DatabaseService(db_path=db_path)
-
-    db_service.init_db()
-
-    exitos = 0
-    descuadres = 0
-
-    for pdf_path in pdf_files:
-        filename = os.path.basename(pdf_path)
+def run_ingestion(
+    pdf_dir: str | Path = "data/test/insis4",
+    db_path: str = "data/runtime/nominas.sqlite",
+) -> IngestionResult:
+    directory = Path(pdf_dir)
+    if not directory.is_dir():
+        raise ValueError(f"No existe el directorio de entrada: {directory}")
+    files = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
+    if not files:
+        raise ValueError(f"No hay PDFs en: {directory}")
+    database = DatabaseService(db_path=db_path)
+    database.init_db()
+    result = IngestionResult()
+    for path in files:
         try:
-            with pdfplumber.open(pdf_path) as pdf:
-                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            doc = parse_nomina_pdf(path, filename=path.name)
+            if doc.cif != "B84225283":
+                raise ValueError("El documento no pertenece a INSIS4")
+            database.guardar_documento(doc)
+        except NoExtractableTextError:
+            result.omitted += 1
+            print(f"OMITIDO / PENDIENTE: {path.name} — sin texto extraíble; sin OCR ni persistencia")
+        except Exception as exc:
+            result.failed += 1
+            print(f"ERROR: {path.name} — {type(exc).__name__}: {exc}")
+        else:
+            result.processed += 1
+            print(f"OK: {path.name}")
+    print(f"INSIS4: procesados={result.processed}, omitidos={result.omitted}, fallos={result.failed}")
+    return result
 
-            nomina = parser.parse(text, filename=filename)
 
-            calculado = round(nomina.total_devengado - nomina.total_deducir, 2)
-            diferencia = abs(calculado - nomina.liquido_percibir)
-
-            if diferencia > 0.02:
-                print(
-                    f"⚠️  [DESCUADRE] {filename}: Leído={nomina.liquido_percibir}€ | Calc={calculado}€ (Diff: {diferencia:.2f}€)")
-                descuadres += 1
-                continue
-            else:
-                print(f"✅ [OK] {filename} -> Periodo: {nomina.periodo} | Líquido: {nomina.liquido_percibir}€")
-
-            db_service.guardar_documento(nomina)
-            exitos += 1
-
-        except Exception as e:
-            print(f"❌ [ERROR] {filename}: {e}")
-
-    print("\n" + "=" * 50)
-    print(f"📊 Resumen Insis4: {exitos}/{len(pdf_files)} procesados. Descuadres: {descuadres}.")
-    print("=" * 50)
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--db", default="data/runtime/nominas.sqlite", help="Ruta SQLite de destino")
+    args = parser.parse_args(argv)
+    try:
+        result = run_ingestion(db_path=args.db)
+    except (ValueError, OSError) as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    return int(result.failed > 0)
 
 
 if __name__ == "__main__":
-    run_ingestion()
+    raise SystemExit(main())
