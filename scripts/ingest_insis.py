@@ -50,9 +50,11 @@ def run_ingestion(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", default="data/runtime/nominas.sqlite", help="Ruta SQLite de destino")
+    parser.add_argument("--pdf-dir", default="data/test/insis4",
+                        help="Directorio de PDFs (legacy: data/testdata/insis4)")
     args = parser.parse_args(argv)
     try:
-        result = run_ingestion(db_path=args.db)
+        result = run_ingestion(pdf_dir=args.pdf_dir, db_path=args.db)
     except (ValueError, OSError) as exc:
         print(f"ERROR: {exc}")
         return 1

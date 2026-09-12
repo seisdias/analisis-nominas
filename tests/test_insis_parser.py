@@ -94,7 +94,7 @@ def test_invalid_money(raw: str) -> None:
 def test_ordinary_formats(fixture: str, request: pytest.FixtureRequest) -> None:
     doc = InsisParser().parse(request.getfixturevalue(fixture), "190001_extra.pdf")
     assert (doc.anio, doc.mes, doc.tipo) == (2099, 7, TipoDocumento.NOMINA_ORDINARIA)
-    assert doc.id == "insis4-2099-07-nomina_ordinaria"
+    assert doc.id == "2099-07-INSIS"
     assert (doc.total_devengado, doc.total_deducir, doc.liquido_percibir) == (1200, 180, 1020)
     assert (doc.salario_base, doc.plus_convenio, doc.complementos) == (1000, 100, 100)
     assert (doc.irpf_porcentaje, doc.irpf_importe) == (10, 120)
@@ -114,7 +114,7 @@ def test_extra_and_distinct_ids(ordinary: str, extra: str) -> None:
     parser = InsisParser()
     doc = parser.parse(extra, "190001_ordinary.pdf")
     assert doc.tipo == TipoDocumento.PAGA_EXTRA
-    assert doc.id == "insis4-2099-07-paga_extra"
+    assert doc.id == "2099-07-INSIS-EXTRA"
     assert doc.id != parser.parse(ordinary).id
     assert (doc.salario_base, doc.complementos) == (0, 500)
     assert (doc.total_devengado, doc.total_deducir, doc.liquido_percibir) == (500, 50, 450)
@@ -184,3 +184,31 @@ def test_unexpected_column_suffix_is_rejected(ordinary: str) -> None:
     text = ordinary.replace(".... 150,00", "150,00INVALID")
     with pytest.raises(ValueError, match="unexpected column content"):
         InsisParser().parse(text)
+
+
+@pytest.mark.parametrize(("fixture_name", "legacy_id"), [
+    ("ordinary", "2099-07-INSIS"), ("extra", "2099-07-INSIS-EXTRA"),
+])
+def test_reingestion_preserves_legacy_row(
+    fixture_name: str, legacy_id: str, request: pytest.FixtureRequest, tmp_path,
+) -> None:
+    from dataclasses import replace
+    from unittest.mock import patch
+
+    from scripts.ingest_insis import IngestionResult, run_ingestion
+    from src.services.database_service import DatabaseService
+
+    text = request.getfixturevalue(fixture_name)
+    parsed = InsisParser().parse(text)
+    db_path = str(tmp_path / "legacy.sqlite")
+    service = DatabaseService(db_path)
+    service.init_db()
+    service.guardar_documento(replace(parsed, id=legacy_id, liquido_percibir=1.0))
+    (tmp_path / "synthetic.pdf").touch()
+    with patch("scripts.ingest_insis.parse_nomina_pdf", return_value=parsed):
+        for _ in range(2):
+            assert run_ingestion(tmp_path, db_path) == IngestionResult(1, 0, 0)
+    rows = service.obtener_todos()
+    assert len(rows) == 1
+    assert rows[0]["id"] == legacy_id
+    assert rows[0]["liquido_percibir"] == parsed.liquido_percibir

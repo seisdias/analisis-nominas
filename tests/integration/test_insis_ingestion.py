@@ -16,7 +16,8 @@ def test_insis_corpus_persistence_and_idempotence(tmp_path: Path) -> None:
     first = {row["id"]: row for row in service.obtener_todos()}
     assert len(first) == 23
     for expected in TEXTUAL:
-        key = f"insis4-{expected['anio']:04d}-{expected['mes']:02d}-{expected['tipo'].lower()}"
+        suffix = "-EXTRA" if expected["tipo"] == "PAGA_EXTRA" else ""
+        key = f"{expected['anio']:04d}-{expected['mes']:02d}-INSIS{suffix}"
         assert key in first
         row = first[key]
         assert row["empresa"] == "INTELIGENCIA SISTEMATICA 4, S.L."
@@ -30,9 +31,9 @@ def test_insis_corpus_persistence_and_idempotence(tmp_path: Path) -> None:
             else:
                 assert row[field] == value, field
     for extra in (entry for entry in TEXTUAL if entry["tipo"] == "PAGA_EXTRA"):
-        prefix = f"insis4-{extra['anio']:04d}-{extra['mes']:02d}"
-        assert prefix + "-nomina_ordinaria" in first
-        assert prefix + "-paga_extra" in first
+        prefix = f"{extra['anio']:04d}-{extra['mes']:02d}-INSIS"
+        assert prefix in first
+        assert prefix + "-EXTRA" in first
     for scanned in SCANNED:
         assert all(row["observaciones"] != f"Procesado desde {scanned['filename']}"
                    for row in first.values())

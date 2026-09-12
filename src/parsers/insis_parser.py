@@ -134,7 +134,7 @@ class InsisParser(BaseParser):
         base_social = _cell(base_rows, "TOTAL", blank=extra)
 
         doc = self._validate(Nomina(
-            id=f"insis4-{year:04d}-{month:02d}-{kind.value.lower()}",
+            id=f"{year:04d}-{month:02d}-INSIS{'-EXTRA' if extra else ''}",
             tipo=kind, anio=year, mes=month, periodo=f"{year:04d}-{month:02d}",
             empresa="INTELIGENCIA SISTEMATICA 4, S.L.", cif="B84225283",
             salario_base=salary, plus_convenio=agreement,

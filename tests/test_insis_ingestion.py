@@ -12,7 +12,7 @@ from src.services.ingestion_service import NoExtractableTextError, parse_nomina_
 
 
 def payroll() -> Nomina:
-    return Nomina(id="insis4-2099-01-nomina_ordinaria", anio=2099, mes=1, periodo="2099-01",
+    return Nomina(id="2099-01-INSIS", anio=2099, mes=1, periodo="2099-01",
                   empresa="INTELIGENCIA SISTEMATICA 4, S.L.", cif="B84225283",
                   total_devengado=100, total_deducir=10, liquido_percibir=90)
 
@@ -82,4 +82,11 @@ def test_empty_directory_does_not_create_database(tmp_path: Path) -> None:
 def test_cli_database_and_exit_status(result: IngestionResult, exit_code: int) -> None:
     with patch("scripts.ingest_insis.run_ingestion", return_value=result) as run:
         assert main(["--db", "synthetic.sqlite"]) == exit_code
-        run.assert_called_once_with(db_path="synthetic.sqlite")
+        run.assert_called_once_with(pdf_dir="data/test/insis4", db_path="synthetic.sqlite")
+
+
+@pytest.mark.parametrize("directory", ["data/testdata/insis4", "data/test/insis4", "custom/input"])
+def test_cli_explicit_input_directory(directory: str) -> None:
+    with patch("scripts.ingest_insis.run_ingestion", return_value=IngestionResult(1)) as run:
+        assert main(["--pdf-dir", directory, "--db", "synthetic.sqlite"]) == 0
+        run.assert_called_once_with(pdf_dir=directory, db_path="synthetic.sqlite")

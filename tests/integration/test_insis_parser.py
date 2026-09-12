@@ -63,7 +63,8 @@ def test_parse_insis_pdf(expected: dict[str, Any], texts: dict[str, str]) -> Non
     doc = InsisParser().parse(texts[name], filename=name)
     assert (doc.anio, doc.mes, doc.tipo.value) == (expected["anio"], expected["mes"], expected["tipo"])
     assert doc.periodo == f"{expected['anio']:04d}-{expected['mes']:02d}"
-    assert doc.id == f"insis4-{doc.periodo}-{expected['tipo'].lower()}"
+    suffix = "-EXTRA" if expected["tipo"] == "PAGA_EXTRA" else ""
+    assert doc.id == f"{doc.periodo}-INSIS{suffix}"
     assert doc.empresa == "INTELIGENCIA SISTEMATICA 4, S.L."
     assert doc.cif == "B84225283"
     assert doc.observaciones == f"Procesado desde {name}"
