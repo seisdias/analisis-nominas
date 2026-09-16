@@ -1,3 +1,5 @@
+import re
+
 from src.parsers.alten_parser import AltenParser
 from src.parsers.altran_parser import AltranParser
 from src.parsers.base import BaseParser
@@ -19,6 +21,8 @@ class ParserFactory:
         value = empresa_o_texto.casefold()
         if "inteligencia sistematica" in value:
             value += " insis"
+        if re.search(r"\ba28220168\b", value):
+            value += " ineco"
         matches = [parser for key, parser in self._parsers.items() if key in value]
         if len(matches) != 1:
             raise ValueError("Unknown or ambiguous payroll format; specify the company")

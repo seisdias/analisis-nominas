@@ -28,98 +28,104 @@ class DatabaseService:
 
     def init_db(self):
         conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS documentos (
-                id TEXT PRIMARY KEY,
-                anio INTEGER NOT NULL,
-                mes INTEGER NOT NULL,
-                periodo TEXT NOT NULL,
-                empresa TEXT NOT NULL,
-                cif TEXT NOT NULL,
-                tipo TEXT NOT NULL,
-                salario_base REAL DEFAULT 0.0,
-                total_devengado REAL DEFAULT 0.0,
-                total_deducir REAL DEFAULT 0.0,
-                liquido_percibir REAL DEFAULT 0.0,
-                retribuciones_integras REAL DEFAULT 0.0,
-                retenciones_practicadas REAL DEFAULT 0.0,
-                observaciones TEXT DEFAULT '',
-                es_procesable INTEGER DEFAULT 1,
-                payload TEXT NOT NULL DEFAULT '{}'
-            )
-        """)
-        conn.commit()
-        if not self._shared_conn:
-            conn.close()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS documentos (
+                        id TEXT PRIMARY KEY,
+                        anio INTEGER NOT NULL,
+                        mes INTEGER NOT NULL,
+                        periodo TEXT NOT NULL,
+                        empresa TEXT NOT NULL,
+                        cif TEXT NOT NULL,
+                        tipo TEXT NOT NULL,
+                        salario_base REAL DEFAULT 0.0,
+                        total_devengado REAL DEFAULT 0.0,
+                        total_deducir REAL DEFAULT 0.0,
+                        liquido_percibir REAL DEFAULT 0.0,
+                        retribuciones_integras REAL DEFAULT 0.0,
+                        retenciones_practicadas REAL DEFAULT 0.0,
+                        observaciones TEXT DEFAULT '',
+                        es_procesable INTEGER DEFAULT 1,
+                        payload TEXT NOT NULL DEFAULT '{}'
+                    )
+                """)
+        finally:
+            if conn is not self._shared_conn:
+                conn.close()
 
     def reset_db(self):
         conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DROP TABLE IF EXISTS documentos")
-        conn.commit()
-        if not self._shared_conn:
-            conn.close()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DROP TABLE IF EXISTS documentos")
+        finally:
+            if conn is not self._shared_conn:
+                conn.close()
         self.init_db()
 
     def guardar_documento(self, doc: DocumentoLaboral):
         conn = self._get_connection()
-        cursor = conn.cursor()
+        try:
+            with conn:
+                cursor = conn.cursor()
 
-        salario_base = getattr(doc, 'salario_base', 0.0)
-        total_devengado = getattr(doc, 'total_devengado', 0.0)
-        total_deducir = getattr(doc, 'total_deducir', 0.0)
-        liquido_percibir = getattr(doc, 'liquido_percibir', 0.0)
-        retribuciones_integras = getattr(doc, 'retribuciones_integras', 0.0)
-        retenciones_practicadas = getattr(doc, 'retenciones_practicadas', 0.0)
+                salario_base = getattr(doc, 'salario_base', 0.0)
+                total_devengado = getattr(doc, 'total_devengado', 0.0)
+                total_deducir = getattr(doc, 'total_deducir', 0.0)
+                liquido_percibir = getattr(doc, 'liquido_percibir', 0.0)
+                retribuciones_integras = getattr(doc, 'retribuciones_integras', 0.0)
+                retenciones_practicadas = getattr(doc, 'retenciones_practicadas', 0.0)
 
-        cursor.execute(
-            """
-            INSERT INTO documentos (
-                id, anio, mes, periodo, empresa, cif, tipo,
-                salario_base, total_devengado, total_deducir, liquido_percibir,
-                retribuciones_integras, retenciones_practicadas,
-                observaciones, es_procesable, payload
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                anio = excluded.anio,
-                mes = excluded.mes,
-                periodo = excluded.periodo,
-                empresa = excluded.empresa,
-                cif = excluded.cif,
-                tipo = excluded.tipo,
-                salario_base = excluded.salario_base,
-                total_devengado = excluded.total_devengado,
-                total_deducir = excluded.total_deducir,
-                liquido_percibir = excluded.liquido_percibir,
-                retribuciones_integras = excluded.retribuciones_integras,
-                retenciones_practicadas = excluded.retenciones_practicadas,
-                observaciones = excluded.observaciones,
-                es_procesable = excluded.es_procesable,
-                payload = excluded.payload
-            """,
-            (
-                doc.id,
-                doc.anio,
-                doc.mes,
-                doc.periodo,
-                doc.empresa,
-                doc.cif,
-                doc.tipo.value,
-                salario_base,
-                total_devengado,
-                total_deducir,
-                liquido_percibir,
-                retribuciones_integras,
-                retenciones_practicadas,
-                doc.observaciones,
-                int(doc.es_procesable),
-                json.dumps(asdict(doc), ensure_ascii=False),
-            ),
-        )
-        conn.commit()
-        if not self._shared_conn:
-            conn.close()
+                cursor.execute(
+                    """
+                    INSERT INTO documentos (
+                        id, anio, mes, periodo, empresa, cif, tipo,
+                        salario_base, total_devengado, total_deducir, liquido_percibir,
+                        retribuciones_integras, retenciones_practicadas,
+                        observaciones, es_procesable, payload
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        anio = excluded.anio,
+                        mes = excluded.mes,
+                        periodo = excluded.periodo,
+                        empresa = excluded.empresa,
+                        cif = excluded.cif,
+                        tipo = excluded.tipo,
+                        salario_base = excluded.salario_base,
+                        total_devengado = excluded.total_devengado,
+                        total_deducir = excluded.total_deducir,
+                        liquido_percibir = excluded.liquido_percibir,
+                        retribuciones_integras = excluded.retribuciones_integras,
+                        retenciones_practicadas = excluded.retenciones_practicadas,
+                        observaciones = excluded.observaciones,
+                        es_procesable = excluded.es_procesable,
+                        payload = excluded.payload
+                    """,
+                    (
+                        doc.id,
+                        doc.anio,
+                        doc.mes,
+                        doc.periodo,
+                        doc.empresa,
+                        doc.cif,
+                        doc.tipo.value,
+                        salario_base,
+                        total_devengado,
+                        total_deducir,
+                        liquido_percibir,
+                        retribuciones_integras,
+                        retenciones_practicadas,
+                        doc.observaciones,
+                        int(doc.es_procesable),
+                        json.dumps(asdict(doc), ensure_ascii=False),
+                    ),
+                )
+        finally:
+            if conn is not self._shared_conn:
+                conn.close()
 
     def obtener_todos(self) -> List[Dict[str, Any]]:
         conn = self._get_connection()
@@ -150,8 +156,8 @@ class DatabaseService:
     def eliminar_documento(self, document_id: str) -> None:
         conn = self._get_connection()
         try:
-            conn.execute("DELETE FROM documentos WHERE id = ?", (document_id,))
-            conn.commit()
+            with conn:
+                conn.execute("DELETE FROM documentos WHERE id = ?", (document_id,))
         finally:
-            if not self._shared_conn:
+            if conn is not self._shared_conn:
                 conn.close()
