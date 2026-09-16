@@ -1,62 +1,66 @@
-# -*- coding: utf-8 -*-
-import glob
-import os
+"""Ingest local INECO payrolls; use --db to select an isolated SQLite database."""
 
-import pdfplumber
+import argparse
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
 
-from src.parsers.ineco_parser import InecoParser
 from src.services.database_service import DatabaseService
+from src.services.ingestion_service import NoExtractableTextError, parse_nomina_pdf
 
 
-def run_ingestion():
-    pdf_dir = "data/testdata/ineco"
-    db_path = "data/runtime/nominas.sqlite"
+@dataclass
+class IngestionResult:
+    processed: int = 0
+    omitted: int = 0
+    failed: int = 0
 
-    pdf_files = sorted(glob.glob(os.path.join(pdf_dir, "*.pdf")))
 
-    if not pdf_files:
-        print(f"❌ No se encontraron archivos PDF en '{pdf_dir}'.")
-        return
-
-    print(f"🚀 Iniciando procesamiento de {len(pdf_files)} PDFs de Ineco...\n")
-
-    parser = InecoParser()
-    db_service = DatabaseService(db_path=db_path)
-
-    db_service.init_db()
-
-    exitos = 0
-    descuadres = 0
-
-    for pdf_path in pdf_files:
-        filename = os.path.basename(pdf_path)
+def run_ingestion(
+    pdf_dir: str | Path = "data/test/ineco",
+    db_path: str = "data/runtime/nominas.sqlite",
+) -> IngestionResult:
+    directory = Path(pdf_dir)
+    if not directory.is_dir():
+        raise ValueError(f"No existe el directorio de entrada: {directory}")
+    files = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
+    if not files:
+        raise ValueError(f"No hay PDFs en: {directory}")
+    database = DatabaseService(db_path=db_path)
+    database.init_db()
+    result = IngestionResult()
+    for path in files:
         try:
-            with pdfplumber.open(pdf_path) as pdf:
-                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            doc = parse_nomina_pdf(path, filename=path.name)
+            if doc.cif != "A28220168":
+                raise ValueError("El documento no pertenece a INECO")
+            database.guardar_documento(doc)
+        except NoExtractableTextError:
+            result.omitted += 1
+            print(f"OMITIDO / PENDIENTE: {path.name} — sin texto extraíble; sin OCR ni persistencia")
+        except Exception as exc:
+            result.failed += 1
+            print(f"ERROR: {path.name} — {type(exc).__name__}: {exc}")
+        else:
+            result.processed += 1
+            print(f"OK: {path.name}")
+    print(f"INECO: procesados={result.processed}, omitidos={result.omitted}, fallos={result.failed}")
+    return result
 
-            nomina = parser.parse(text, filename=filename)
 
-            calculado = round(nomina.total_devengado - nomina.total_deducir, 2)
-            diferencia = abs(calculado - nomina.liquido_percibir)
-
-            if diferencia > 0.02:
-                print(
-                    f"⚠️  [DESCUADRE] {filename}: Leído={nomina.liquido_percibir}€ | Calc={calculado}€ (Diff: {diferencia:.2f}€)")
-                descuadres += 1
-                continue
-            else:
-                print(f"✅ [OK] {filename} -> Periodo: {nomina.periodo} | Líquido: {nomina.liquido_percibir}€")
-
-            db_service.guardar_documento(nomina)
-            exitos += 1
-
-        except Exception as e:
-            print(f"❌ [ERROR] {filename}: {e}")
-
-    print("\n" + "=" * 50)
-    print(f"📊 Resumen Ineco: {exitos}/{len(pdf_files)} procesados. Descuadres: {descuadres}.")
-    print("=" * 50)
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--db", default="data/runtime/nominas.sqlite", help="Ruta SQLite de destino")
+    parser.add_argument("--pdf-dir", default="data/test/ineco",
+                        help="Directorio de PDFs (legacy: data/testdata/ineco)")
+    args = parser.parse_args(argv)
+    try:
+        result = run_ingestion(pdf_dir=args.pdf_dir, db_path=args.db)
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    return int(result.failed > 0)
 
 
 if __name__ == "__main__":
-    run_ingestion()
+    raise SystemExit(main())
