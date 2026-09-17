@@ -56,6 +56,9 @@ class Nomina(DocumentoLaboral):
 
     conceptos: list[ConceptoNomina] = field(default_factory=list)
 
+    # Explicit accident/occupational disease base; absent in legacy payloads.
+    base_at_ep: Optional[float] = None
+
     @property
     def total_deducciones(self) -> float:
         """Calcula el total de deducciones por diferencia."""

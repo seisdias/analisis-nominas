@@ -4,20 +4,15 @@ from src.parsers.exceltic_parser import ExcelticParser
 
 
 def test_exceltic_parser_basic():
-    parser = ExcelticParser()
-    sample_text = """
-    SALARIO BASE 1500,00
-    PLUS CONVENIO 300,00
-    P.P.EXTRA 200,00
-    LIQUIDO TOTAL A PERCIBIR 1800,00
-    TOTAL DEVENGO 2000,00 TOTAL DEDU. 200,00
-    """
-    nomina = parser.parse(sample_text, filename="209901_synthetic_exceltic.pdf")
+    # The former sample omitted company, period and table structure, accepting
+    # a filename-derived period. Use the complete synthetic payroll instead.
+    from tests.test_exceltic_parser import SAMPLE
 
-    assert nomina.empresa == "Exceltic"
-    assert nomina.periodo == "2099-01"
-    assert nomina.liquido_percibir == 1800.00
-    assert nomina.salario_base == 1500.00
+    nomina = ExcelticParser().parse(SAMPLE, filename="unrelated.pdf")
+    assert nomina.empresa == "EXCELTIC SL"
+    assert nomina.periodo == "2098-02"
+    assert nomina.liquido_percibir == 1480.00
+    assert nomina.salario_base == 1200.00
 
 
 def test_altran_parser_basic():
