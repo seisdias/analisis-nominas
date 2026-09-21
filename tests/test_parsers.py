@@ -16,19 +16,13 @@ def test_exceltic_parser_basic():
 
 
 def test_altran_parser_basic():
-    parser = AltranParser()
-    sample_text = """
-    Salario Base 30,00 50,00 1500,00
-    Plus Convenio 30,00 10,00 300,00
-    Parte Proporcional Pagas Extras 200,00
-    Totales 2000,00 200,00
-    Líquido a percibir 1800,00
-    """
-    nomina = parser.parse(sample_text, filename="2099_02_synthetic_altran.pdf")
+    # Identity and period now require a complete synthetic document.
+    from tests.test_altran_parser import SAMPLE
 
-    assert nomina.empresa == "Altran"
-    assert nomina.periodo == "2099-02"
-    assert nomina.liquido_percibir == 1800.00
+    nomina = AltranParser().parse(SAMPLE, filename="unrelated.pdf")
+    assert nomina.empresa == "ALTRAN INNOVACION S.L."
+    assert nomina.periodo == "2098-02"
+    assert nomina.liquido_percibir == 1820.00
 
 
 def test_alten_parser_basic():

@@ -23,6 +23,8 @@ class ConceptoNomina:
     porcentaje: Optional[float] = None
     unidades: Optional[float] = None
     precio: Optional[float] = None
+    # Explicit monetary base, distinct from units, price, rate and amount.
+    base: Optional[float] = None
 
 
 @dataclass
