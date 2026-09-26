@@ -34,9 +34,9 @@ class Nomina(DocumentoLaboral):
     grupo_cotizacion: Optional[str] = None
 
     # Devengos
-    salario_base: float = 0.0
-    plus_convenio: float = 0.0
-    complementos: float = 0.0
+    salario_base: Optional[float] = 0.0
+    plus_convenio: Optional[float] = 0.0
+    complementos: Optional[float] = 0.0
     prorrata_pagas_extra: Optional[float] = 0.0
     total_devengado: float = 0.0
 
@@ -60,6 +60,14 @@ class Nomina(DocumentoLaboral):
 
     # Explicit accident/occupational disease base; absent in legacy payloads.
     base_at_ep: Optional[float] = None
+
+    # Independently printed fields; absent in legacy payloads.
+    pror_otros: Optional[float] = None
+    base_irpf_pie: Optional[float] = None
+    base_sujeta_retencion_irpf: Optional[float] = None
+    base_irpf_especie: Optional[float] = None
+    fecha_alta: Optional[str] = None
+    categoria_convenio: Optional[str] = None
 
     @property
     def total_deducciones(self) -> float:

@@ -17,3 +17,8 @@ class ExtractedDocument:
     text: str
     # None means layout was not requested; () means no words were extracted.
     words: tuple[ExtractedWord, ...] | None = None
+
+    # Original PDF stream order, including real glyph coordinates.
+    characters: tuple[ExtractedWord, ...] | None = None
+    # Explicit pages, including blank ones; absent in legacy DTOs.
+    pages: tuple["ExtractedDocument", ...] | None = None
