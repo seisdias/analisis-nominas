@@ -26,13 +26,10 @@ def test_altran_parser_basic():
 
 
 def test_alten_parser_basic():
-    parser = AltenParser()
-    sample_text = """
-    TOTAL DEVENGADO TOTAL DEDUCCIONES 2500,00 500,00
-    LIQUIDO A PERCIBIR 2000,00
-    """
-    nomina = parser.parse(sample_text, filename="209903_synthetic_alten.pdf")
+    # The former fixture accepted a filename-derived period and lacked identity.
+    from tests.test_alten_parser import page
 
-    assert nomina.empresa == "Alten"
-    assert nomina.periodo == "2099-03"
-    assert nomina.liquido_percibir == 2000.00
+    nomina = AltenParser().parse_extracted(page(), filename="190001_wrong.pdf")
+    assert nomina.empresa == "ALTEN DELIVERY CENTER SPAIN SLU"
+    assert nomina.periodo == "2098-02"
+    assert nomina.liquido_percibir == 1259.00

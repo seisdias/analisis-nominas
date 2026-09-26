@@ -79,7 +79,7 @@ def test_missing_ambiguous_or_outside_layout_rejected():
         AltranParser.concept_column(crossed_doc, crossing)
 
 
-@pytest.mark.parametrize("company", ["alten", "altran", "coritel", "insis", "ineco", "exceltic"])
+@pytest.mark.parametrize("company", ["altran", "coritel", "insis", "ineco", "exceltic"])
 def test_existing_parsers_receive_identical_text(company):
     parser = ParserFactory().obtener_parser(company)
     expected = AltranParser().parse(SAMPLE)
