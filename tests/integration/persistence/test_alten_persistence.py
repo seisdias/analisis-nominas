@@ -8,7 +8,7 @@ import pytest
 from src.models.nomina import Nomina
 from src.parsers.alten_parser import AltenParser
 from src.services.database_service import DatabaseService
-from tests.test_alten_parser import page
+from tests.synthetic.parsers.test_alten_parser import page
 
 SHA = 'a' * 64
 OTHER_SHA = 'b' * 64

@@ -7,7 +7,7 @@ import pytest
 from src.models.nomina import Nomina
 from src.parsers.ineco_parser import InecoParser
 from src.services.database_service import DatabaseService
-from tests.test_ineco_parser import NEW, OLD
+from tests.synthetic.parsers.test_ineco_parser import NEW, OLD
 
 
 def payroll(rows: str, template: str = OLD) -> str:

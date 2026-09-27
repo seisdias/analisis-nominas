@@ -11,7 +11,7 @@ from src.models.nomina import Nomina
 from src.parsers.exceltic_parser import ExcelticParser
 from src.services.database_service import DatabaseService
 from src.services.ingestion_service import NoExtractableTextError
-from tests.test_exceltic_parser import SAMPLE
+from tests.synthetic.parsers.test_exceltic_parser import SAMPLE
 
 
 def documents():

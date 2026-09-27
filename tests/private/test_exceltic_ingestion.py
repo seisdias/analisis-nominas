@@ -6,13 +6,13 @@ from scripts.ingest_exceltic import IngestionResult, run_ingestion
 from src.models.nomina import Nomina
 from src.services.database_service import DatabaseService
 from src.services.ingestion_service import parse_nomina_pdf
-from tests.integration.test_exceltic_parser import (
+from tests.private.test_exceltic_parser import (
     CORPUS,
     MANIFEST,
     TEXTUAL,
     _inventory,
 )
-from tests.integration.test_exceltic_parser import (
+from tests.private.test_exceltic_parser import (
     test_exceltic_private_document as verify_oracle_document,
 )
 

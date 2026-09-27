@@ -67,7 +67,7 @@ def test_storage_preserves_details_and_updates_duplicates():
 
 def test_alten_missing_totals_is_rejected():
     with pytest.raises(ValueError, match="totals"):
-        from tests.test_alten_parser import page
+        from tests.synthetic.parsers.test_alten_parser import page
         AltenParser().parse(page().text.replace("1.500,00 241,00", "0,00"), "wrong.pdf")
 
 

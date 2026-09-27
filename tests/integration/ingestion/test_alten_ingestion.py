@@ -8,7 +8,7 @@ import pytest
 from scripts.ingest_alten import is_certificate, main, run_ingestion
 from src.extraction import ExtractedDocument, ExtractedWord
 from src.services.database_service import DatabaseService
-from tests.test_alten_parser import page
+from tests.synthetic.parsers.test_alten_parser import page
 
 
 def certificate():

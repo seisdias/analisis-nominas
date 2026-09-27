@@ -9,7 +9,7 @@ from src.extraction import ExtractedDocument, ExtractedWord
 from src.parsers.altran_parser import AltranParser
 from src.parsers.parser_factory import ParserFactory
 from src.services.ingestion_service import extract_pdf_document, parse_nomina_pdf
-from tests.test_altran_parser import SAMPLE, structured
+from tests.synthetic.parsers.test_altran_parser import SAMPLE, structured
 
 
 def _pdf(amount_x: int, offset: int = 0) -> BytesIO:

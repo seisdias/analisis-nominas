@@ -5,16 +5,16 @@ from collections import Counter
 from scripts.ingest_alten import IngestionResult, run_ingestion
 from src.models.nomina import Nomina
 from src.services.database_service import DatabaseService
-from tests.integration.test_alten_parser import CORPUS, MANIFEST
-from tests.integration.test_alten_parser import extracted as extracted
-from tests.integration.test_alten_parser import oracle as oracle
-from tests.integration.test_alten_parser import parsed as parsed
-from tests.integration.test_alten_parser import test_all_versions_retained as verify_versions
-from tests.integration.test_alten_parser import (
+from tests.private.test_alten_parser import CORPUS, MANIFEST
+from tests.private.test_alten_parser import extracted as extracted
+from tests.private.test_alten_parser import oracle as oracle
+from tests.private.test_alten_parser import parsed as parsed
+from tests.private.test_alten_parser import test_all_versions_retained as verify_versions
+from tests.private.test_alten_parser import (
     test_documentary_discrepancies_are_not_corrected as verify_discrepancies,
 )
-from tests.integration.test_alten_parser import test_quantitative_coverage as verify_quantities
-from tests.integration.test_alten_parser import test_version as verify_version
+from tests.private.test_alten_parser import test_quantitative_coverage as verify_quantities
+from tests.private.test_alten_parser import test_version as verify_version
 
 
 def test_full_documentary_corpus_twice(tmp_path, request):

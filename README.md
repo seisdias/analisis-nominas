@@ -37,7 +37,16 @@ Las dependencias runtime y dev están fijadas por separado. La línea base está
 solo admite diagnósticos heredados enumerados; errores nuevos o entradas obsoletas
 fallan. No actualizarla automáticamente para aceptar errores nuevos.
 
-Los tests de `tests/integration/` son locales y no se recogen por defecto:
+La suite se organiza por responsabilidad:
+
+- `tests/unit/`: modelos y contratos canónicos (`canonical/`).
+- `tests/synthetic/`: parsers (`parsers/`) y seguridad transversal con datos sintéticos.
+- `tests/integration/`: extracción, ingesta (`ingestion/`) y persistencia (`persistence/`)
+  con datos sintéticos y SQLite aisladas.
+- `tests/private/`: regresiones del corpus privado; los nombres conservan la empresa
+  y el área (`parser` o `ingestion`).
+
+Los tests de `tests/private/` son locales y no se recogen por defecto:
 
 ```bash
 python -m pytest --collect-only --run-private

@@ -103,7 +103,7 @@ def test_cli_defaults_and_invalid_directory() -> None:
 @pytest.mark.parametrize("suffix", ["", "-EXTRA"])
 def test_legacy_full_month_id_is_updated_not_duplicated(tmp_path: Path, suffix: str) -> None:
     from src.parsers.ineco_parser import InecoParser
-    from tests.test_ineco_parser import OLD
+    from tests.synthetic.parsers.test_ineco_parser import OLD
 
     text = OLD if not suffix else OLD.replace("9001", "9033 Paga extra Navi 100,00\n9001")
     parsed = InecoParser().parse(text)
@@ -123,7 +123,7 @@ def test_legacy_full_month_id_is_updated_not_duplicated(tmp_path: Path, suffix: 
 
 def test_split_month_persists_both_periods_idempotently(tmp_path: Path) -> None:
     from src.parsers.ineco_parser import InecoParser
-    from tests.test_ineco_parser import OLD
+    from tests.synthetic.parsers.test_ineco_parser import OLD
 
     docs = [InecoParser().parse(OLD.replace("31.10.2099", "09.10.2099")),
             InecoParser().parse(OLD.replace("01.10.2099", "10.10.2099"))]

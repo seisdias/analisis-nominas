@@ -8,7 +8,7 @@ from scripts.ingest_ineco import IngestionResult, run_ingestion
 from src.models.nomina import Nomina
 from src.services.database_service import DatabaseService
 from src.services.ingestion_service import parse_nomina_pdf
-from tests.integration.test_ineco_parser import CORPUS, SCANNED, TEXTUAL, _check_inventory
+from tests.private.test_ineco_parser import CORPUS, SCANNED, TEXTUAL, _check_inventory
 
 
 def test_ineco_corpus_storage_and_idempotence(tmp_path: Path) -> None:

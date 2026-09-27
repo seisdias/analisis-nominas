@@ -5,7 +5,7 @@ from pathlib import Path
 
 from scripts.ingest_insis import IngestionResult, run_ingestion
 from src.services.database_service import DatabaseService
-from tests.integration.test_insis_parser import INSIS_DIR, SCANNED, TEXTUAL, _check_inventory
+from tests.private.test_insis_parser import INSIS_DIR, SCANNED, TEXTUAL, _check_inventory
 
 
 def test_insis_corpus_persistence_and_idempotence(tmp_path: Path) -> None:

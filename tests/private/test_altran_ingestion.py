@@ -7,11 +7,11 @@ from scripts.ingest_altran import IngestionResult, run_ingestion
 from src.models.nomina import Nomina
 from src.parsers.parser_factory import ParserFactory
 from src.services.database_service import DatabaseService
-from tests.integration.test_altran_parser import CORPUS, MANIFEST
-from tests.integration.test_altran_parser import documents as documents
-from tests.integration.test_altran_parser import oracle as oracle
-from tests.integration.test_altran_parser import test_exhaustive_quantities as verify_quantities
-from tests.integration.test_altran_parser import test_payroll as verify_payroll
+from tests.private.test_altran_parser import CORPUS, MANIFEST
+from tests.private.test_altran_parser import documents as documents
+from tests.private.test_altran_parser import oracle as oracle
+from tests.private.test_altran_parser import test_exhaustive_quantities as verify_quantities
+from tests.private.test_altran_parser import test_payroll as verify_payroll
 
 
 def test_complete_corpus_double_ingestion(tmp_path: Path, request):

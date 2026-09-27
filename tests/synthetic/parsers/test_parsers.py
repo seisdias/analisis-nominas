@@ -6,7 +6,7 @@ from src.parsers.exceltic_parser import ExcelticParser
 def test_exceltic_parser_basic():
     # The former sample omitted company, period and table structure, accepting
     # a filename-derived period. Use the complete synthetic payroll instead.
-    from tests.test_exceltic_parser import SAMPLE
+    from tests.synthetic.parsers.test_exceltic_parser import SAMPLE
 
     nomina = ExcelticParser().parse(SAMPLE, filename="unrelated.pdf")
     assert nomina.empresa == "EXCELTIC SL"
@@ -17,7 +17,7 @@ def test_exceltic_parser_basic():
 
 def test_altran_parser_basic():
     # Identity and period now require a complete synthetic document.
-    from tests.test_altran_parser import SAMPLE
+    from tests.synthetic.parsers.test_altran_parser import SAMPLE
 
     nomina = AltranParser().parse(SAMPLE, filename="unrelated.pdf")
     assert nomina.empresa == "ALTRAN INNOVACION S.L."
@@ -27,7 +27,7 @@ def test_altran_parser_basic():
 
 def test_alten_parser_basic():
     # The former fixture accepted a filename-derived period and lacked identity.
-    from tests.test_alten_parser import page
+    from tests.synthetic.parsers.test_alten_parser import page
 
     nomina = AltenParser().parse_extracted(page(), filename="190001_wrong.pdf")
     assert nomina.empresa == "ALTEN DELIVERY CENTER SPAIN SLU"

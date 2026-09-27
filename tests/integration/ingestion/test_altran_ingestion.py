@@ -10,7 +10,7 @@ from scripts.ingest_altran import IngestionResult, main, run_ingestion
 from src.extraction import ExtractedDocument
 from src.models.nomina import Nomina
 from src.services.database_service import DatabaseService
-from tests.test_altran_parser import structured
+from tests.synthetic.parsers.test_altran_parser import structured
 
 CERTIFICATE = ExtractedDocument(
     "Certificado de retenciones e ingresos a cuenta del Impuesto sobre la Renta "
