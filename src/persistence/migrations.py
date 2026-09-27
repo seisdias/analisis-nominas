@@ -207,7 +207,7 @@ def open_database(
 ) -> Iterator[DatabaseSession]:
     """Verify by default; creating and migration are separate explicit operations.
 
-    Current package schema is only migration 1. Injected catalogs support future
+    The packaged catalog defines the current schema. Injected catalogs support isolated
     versions and synthetic tests without modifying installed SQL resources.
     """
     if mode not in ("create", "migrate", "verify"):

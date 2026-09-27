@@ -4,7 +4,7 @@ import hashlib
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import patch
 
 import pytest
@@ -18,10 +18,27 @@ from src.persistence import (
     SchemaIntegrityError,
     UnknownSchemaVersionError,
     connect,
-    load_migrations,
-    open_database,
     verify_schema,
 )
+from src.persistence import (
+    load_migrations as packaged_migrations,
+)
+from src.persistence import (
+    open_database as packaged_open_database,
+)
+
+
+# These infrastructure scenarios exercise the original v1 bootstrap, with
+# synthetic later migrations. Real packaged v2 is covered in test_evidence.py.
+def load_migrations() -> tuple[Migration, ...]:
+    return packaged_migrations()[:1]
+
+
+def open_database(
+    path: str | Path, *, mode: Literal["create", "migrate", "verify"] = "verify", **kwargs: Any,
+):
+    kwargs.setdefault("migrations", load_migrations())
+    return packaged_open_database(path, mode=mode, **kwargs)
 
 
 def catalog(*sql: str) -> tuple[Migration, ...]:

@@ -11,7 +11,7 @@ from src.persistence import open_database
 
 # Explicit initialization; creates directories/file only in this mode.
 with open_database(path, mode="create", application_revision="release-or-build-id") as db:
-    assert db.status.current_version == 1
+    assert db.status.current_version == 2
 
 # Existing file only; applies pending known migrations.
 with open_database(path, mode="migrate", application_revision="release-or-build-id") as db:
@@ -54,7 +54,7 @@ Python autocommit is explicitly enabled. The runner owns SQL `BEGIN IMMEDIATE`,
 
 ## Catalog and bootstrap
 
-`sql/0001_schema_migrations.sql` is the only packaged migration. It creates only:
+`sql/0001_schema_migrations.sql` creates the control ledger:
 
 ```text
 schema_migrations(version PK, checksum, applied_at, application_revision)
@@ -94,7 +94,7 @@ defaults to `development`, and never invokes Git.
 `verify_schema` checks FK activation, control-table columns, contiguous history,
 known versions, exact checksums and audit metadata, then runs `integrity_check`
 and `foreign_key_check`. Pending versions are returned, not applied in verification.
-An empty existing file returns version 0/pending 1 without bootstrap or writes.
+An empty existing file returns version 0/pending 1 and 2 without bootstrap or writes.
 
 Specific errors distinguish configuration, invalid definitions/history, unknown
 future versions, checksum changes, execution failures and integrity failures.
@@ -113,3 +113,57 @@ See SQLite's [schema loading implementation](https://github.com/sqlite/sqlite/bl
 
 No backups, downgrades, schema repair, legacy adoption or economic migrations are
 implemented. Subsequent migrations must preserve the migration-ledger contract.
+
+
+## Identity and physical evidence (schema 2)
+
+`sql/0002_identity_and_evidence.sql` adds exactly `persons`, `employers`,
+`corpora`, `source_files`, `file_locations`, `ingest_runs`, and `ingest_items`.
+It adds no document interpretation or economic tables. All foreign keys use
+RESTRICT for both deletion and updates; child lookup indexes accompany them.
+Version 1 bytes and checksums remain unchanged. Old infrastructure tests explicitly
+inject the v1 catalog; evidence tests exercise the full packaged catalog and upgrade.
+
+Pure frozen records and ID constructors live in `src.canonical.evidence`.
+`src.persistence.evidence.EvidenceRepository` takes the infrastructure connection
+but its operations accept/return those records (or `None`), never rows/cursors.
+Registration returns `WriteOutcome.CREATED` or `IDENTICAL`; divergent immutable
+content raises `ReproducibilityConflict`. FK/CHECK violations remain SQLite
+integrity errors at this adapter boundary. No persistence is coupled to `Nomina`.
+
+Person/corpus IDs use a UUID seed (generated when omitted); callers retain the ID
+or seed for subsequent registrations. Employer identity uses the supplied uppercase
+country and exact, unpadded tax ID; no name matching, case folding or punctuation
+removal guesses legal equivalence. Without tax ID an employer uses a UUID seed.
+A file ID depends solely on its lowercase SHA256. Copies share a file and may have
+multiple locations. Different files can occupy the same relative path. Paths are
+normalized relative POSIX paths; original filenames must be basenames.
+No file bytes or real corpus are read by this adapter.
+
+Timestamps are explicit UTC ISO 8601 strings with UTC defaults on new records.
+Identical registrations ignore newly supplied operational timestamps and preserve
+the first persisted value. Contradictory metadata, including availability, is not
+silently updated. Future availability decisions are outside this increment.
+
+Ingestion plans have contract version 1 and use the existing canonical serialization
+version 1. Plans accept null, booleans, integers, text, lists and string-keyed maps;
+floats and economic typed values are outside this plan contract. JSON envelope,
+type tags, canonical spelling/order, SHA256 and run identity are all validated.
+`IngestRun.from_plan` builds them without exposing SQL. A plan hash identifies one
+inventory run, not every process attempt; retries/attempt orchestration is deferred.
+
+`register_item` records inventory. `update_item` explicitly updates a pending item
+while its run is running; immutable identity fields cannot change. Terminal items
+cannot be overwritten, but repeating identical updates is allowed. Processed items
+require a physical file; when an expected hash exists it must match the linked file.
+Skipped/failed items require a machine reason code. All free-form error detail is
+replaced with `Details omitted; see reason_code.`: redacting only paths would not
+reliably remove personal data. No raw exception or traceback is persisted.
+`finish_run` records complete/partial with a UTC completion time. Complete cannot
+contain pending/failed items; terminal runs cannot gain items or change status.
+A repeated same-status finish preserves its original timestamp.
+
+Every write uses a savepoint; `repository.transaction()` groups writes atomically,
+including rollback on conflicts. Nested units compose with caller-owned transactions.
+This is inventory only: no parser execution, real ingestion, logical documents,
+pages, version resolution, ALTEN interpretation or KPI implementation is included.
