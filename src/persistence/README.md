@@ -11,7 +11,7 @@ from src.persistence import open_database
 
 # Explicit initialization; creates directories/file only in this mode.
 with open_database(path, mode="create", application_revision="release-or-build-id") as db:
-    assert db.status.current_version == 2
+    assert db.status.current_version == 3
 
 # Existing file only; applies pending known migrations.
 with open_database(path, mode="migrate", application_revision="release-or-build-id") as db:
@@ -94,7 +94,7 @@ defaults to `development`, and never invokes Git.
 `verify_schema` checks FK activation, control-table columns, contiguous history,
 known versions, exact checksums and audit metadata, then runs `integrity_check`
 and `foreign_key_check`. Pending versions are returned, not applied in verification.
-An empty existing file returns version 0/pending 1 and 2 without bootstrap or writes.
+An empty existing file returns version 0/pending 1, 2 and 3 without bootstrap or writes.
 
 Specific errors distinguish configuration, invalid definitions/history, unknown
 future versions, checksum changes, execution failures and integrity failures.
@@ -122,7 +122,8 @@ implemented. Subsequent migrations must preserve the migration-ledger contract.
 It adds no document interpretation or economic tables. All foreign keys use
 RESTRICT for both deletion and updates; child lookup indexes accompany them.
 Version 1 bytes and checksums remain unchanged. Old infrastructure tests explicitly
-inject the v1 catalog; evidence tests exercise the full packaged catalog and upgrade.
+inject the v1 catalog; identity/evidence tests inject v2. Document tests exercise
+the current packaged catalog and the upgrade from v2.
 
 Pure frozen records and ID constructors live in `src.canonical.evidence`.
 `src.persistence.evidence.EvidenceRepository` takes the infrastructure connection
@@ -165,5 +166,44 @@ A repeated same-status finish preserves its original timestamp.
 
 Every write uses a savepoint; `repository.transaction()` groups writes atomically,
 including rollback on conflicts. Nested units compose with caller-owned transactions.
-This is inventory only: no parser execution, real ingestion, logical documents,
-pages, version resolution, ALTEN interpretation or KPI implementation is included.
+Inventory does not execute parsers or ingest a real corpus. It does not resolve
+versions, interpret ALTEN or calculate KPIs.
+
+
+## Documents and extractions (schema 3)
+
+`sql/0003_documents_and_extractions.sql` adds only `logical_documents`,
+`document_versions`, `version_pages` and `extractions`. Earlier migration bytes
+remain unchanged. The same FK RESTRICT and immutable-registration policies apply.
+
+Pure frozen records and helpers are in `src.canonical.documents`; the existing
+`EvidenceRepository` registers/queries them and reuses its transactional writes.
+No new connection, hashing or serialization infrastructure is introduced.
+
+- `document_id(corpus_id, origin_key)` identifies a source-established logical unit.
+  Origin keys are nonempty, stable, opaque keys within their corpus, not inferred
+  from employer/month, filename or economic values. Type and optional employer
+  are metadata; incompatible repetitions conflict rather than silently updating.
+- `version_id(document_id, file_id, segment_key)` identifies a logical unit's
+  physical source and scope. The segment key is supplied explicitly, even for a
+  whole-file scope. One PDF can back different documents and segments. No version
+  is selected as active, latest or preferred.
+- `VersionPage` associates known one-based physical pages with nonnegative order
+  positions. `(version_id, ordinal)` is the primary key; `(version_id, page_number)`
+  is unique. Retrieval orders by ordinal, not page number. Missing page evidence
+  is represented by no association, never a fabricated page 1. Ordinal gaps are
+  allowed; absence of rows does not claim an empty PDF. Known `page_count` bounds
+  are checked by the repository; unknown counts do not fabricate bounds. The same
+  physical page may support multiple versions.
+- `extraction_id(version_id, extractor_name, extractor_revision, config_hash)`
+  identifies a reproducible extraction invocation. `content_hash` is its asserted
+  output digest, deliberately outside identity: a different output under the same
+  inputs raises `ReproducibilityConflict`. No output payload or facts are stored.
+
+ID helpers normalize referenced canonical IDs to their string representation before
+hashing, so typed IDs and strings read back from storage give identical identities.
+All three timestamped registrations retain the first `created_at` on repetition.
+Page associations also reject incompatible reuse of an ordinal or physical page.
+Group chain registration in `repository.transaction()` for all-or-nothing writes.
+Methods return frozen contracts, ordered tuples, or write outcomes, never SQL rows.
+This increment neither imports corpus documents nor adapts `Nomina`.

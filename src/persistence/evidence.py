@@ -6,6 +6,7 @@ from dataclasses import fields, replace
 from enum import StrEnum
 from typing import Iterator, TypeVar
 
+from src.canonical.documents import DocumentVersion, Extraction, LogicalDocument, VersionPage
 from src.canonical.evidence import (
     Corpus,
     Employer,
@@ -17,13 +18,19 @@ from src.canonical.evidence import (
 )
 from src.canonical.identifiers import ReproducibilityConflict
 
-Record = Person | Employer | Corpus | SourceFile | FileLocation | IngestRun | IngestItem
-T = TypeVar('T', Person, Employer, Corpus, SourceFile, FileLocation, IngestRun, IngestItem)
+Record = (Person | Employer | Corpus | SourceFile | FileLocation | IngestRun | IngestItem
+          | LogicalDocument | DocumentVersion | VersionPage | Extraction)
+T = TypeVar('T', Person, Employer, Corpus, SourceFile, FileLocation, IngestRun, IngestItem,
+            LogicalDocument, DocumentVersion, VersionPage, Extraction)
 _TABLES: dict[type[Record], tuple[str, tuple[str, ...]]] = {
     Person: ('persons', ('person_id',)), Employer: ('employers', ('employer_id',)),
     Corpus: ('corpora', ('corpus_id',)), SourceFile: ('source_files', ('file_id',)),
     FileLocation: ('file_locations', ('corpus_id', 'relative_path', 'file_id')),
     IngestRun: ('ingest_runs', ('run_id',)), IngestItem: ('ingest_items', ('run_id', 'item_key')),
+    LogicalDocument: ('logical_documents', ('document_id',)),
+    DocumentVersion: ('document_versions', ('version_id',)),
+    VersionPage: ('version_pages', ('version_id', 'ordinal')),
+    Extraction: ('extractions', ('extraction_id',)),
 }
 
 
@@ -61,7 +68,7 @@ class EvidenceRepository:
             self._connection.execute(f'RELEASE {name}')
             raise
 
-    def _get(self, kind: type[T], *keys: str) -> T | None:
+    def _get(self, kind: type[T], *keys: str | int) -> T | None:
         table, key_names = _TABLES[kind]
         columns = ', '.join(f.name for f in fields(kind))
         where = ' AND '.join(f'{name}=?' for name in key_names)
@@ -188,3 +195,38 @@ class EvidenceRepository:
             self._connection.execute('UPDATE ingest_runs SET status=?, finished_at=? WHERE run_id=?',
                                      (new.status, new.finished_at, run_id))
             return WriteOutcome.UPDATED
+
+    def register_document(self, document: LogicalDocument) -> WriteOutcome:
+        return self._register(document)
+
+    def get_document(self, document_id: str) -> LogicalDocument | None:
+        return self._get(LogicalDocument, document_id)
+
+    def register_version(self, version: DocumentVersion) -> WriteOutcome:
+        return self._register(version)
+
+    def get_version(self, version_id: str) -> DocumentVersion | None:
+        return self._get(DocumentVersion, version_id)
+
+    def associate_page(self, page: VersionPage) -> WriteOutcome:
+        with self.transaction():
+            extent = self._connection.execute(
+                'SELECT f.page_count FROM document_versions v JOIN source_files f '
+                'ON f.file_id=v.file_id WHERE v.version_id=?', (page.version_id,),
+            ).fetchone()
+            if extent is not None and extent[0] is not None and page.page_number > extent[0]:
+                raise ValueError('Page exceeds known physical file extent')
+            return self._register(page)
+
+    def get_version_pages(self, version_id: str) -> tuple[VersionPage, ...]:
+        rows = self._connection.execute(
+            'SELECT version_id, page_number, ordinal FROM version_pages '
+            'WHERE version_id=? ORDER BY ordinal', (version_id,),
+        ).fetchall()
+        return tuple(VersionPage(*row) for row in rows)
+
+    def register_extraction(self, extraction: Extraction) -> WriteOutcome:
+        return self._register(extraction)
+
+    def get_extraction(self, extraction_id: str) -> Extraction | None:
+        return self._get(Extraction, extraction_id)
