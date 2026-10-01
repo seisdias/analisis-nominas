@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import fields, replace
 from enum import StrEnum
-from typing import Iterator, TypeVar
+from typing import Any, Iterator, TypeVar
 
 from src.canonical.documents import DocumentVersion, Extraction, LogicalDocument, VersionPage
 from src.canonical.evidence import (
@@ -16,7 +16,9 @@ from src.canonical.evidence import (
     Person,
     SourceFile,
 )
+from src.canonical.facts import DocumentaryFact, FactPage
 from src.canonical.identifiers import ReproducibilityConflict
+from src.canonical.values import CanonicalValue, CurrencyCode, ExactDecimal, ValueState
 
 Record = (Person | Employer | Corpus | SourceFile | FileLocation | IngestRun | IngestItem
           | LogicalDocument | DocumentVersion | VersionPage | Extraction)
@@ -230,3 +232,94 @@ class EvidenceRepository:
 
     def get_extraction(self, extraction_id: str) -> Extraction | None:
         return self._get(Extraction, extraction_id)
+
+    def register_fact(self, fact: DocumentaryFact) -> WriteOutcome:
+        with self.transaction():
+            old = self.get_fact(fact.fact_id)
+            if old is not None:
+                if replace(fact, created_at=old.created_at) != old:
+                    raise ReproducibilityConflict('Conflicting documentary fact identity')
+                return WriteOutcome.IDENTICAL
+            value = fact.value
+            number = value.value if isinstance(value.value, ExactDecimal) else None
+            text = value.value if isinstance(value.value, str) else None
+            kind = 'decimal' if number is not None else 'text' if text is not None else None
+            try:
+                self._connection.execute(
+                    'INSERT INTO documentary_facts (' + _FACT_COLUMNS + ') VALUES ('
+                    + ', '.join('?' for _ in range(11)) + ')',
+                    (fact.fact_id, fact.extraction_id, fact.fact_key, value.state.value, kind,
+                     number.coefficient if number is not None else None,
+                     number.scale if number is not None else None, text,
+                     value.currency.code if value.currency is not None else None,
+                     value.reason_code, fact.created_at),
+                )
+            except sqlite3.IntegrityError as error:
+                if error.sqlite_errorcode in (sqlite3.SQLITE_CONSTRAINT_UNIQUE,
+                                               sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY):
+                    raise ReproducibilityConflict('Conflicting documentary fact key') from error
+                raise
+            return WriteOutcome.CREATED
+
+    def get_fact(self, fact_id: str) -> DocumentaryFact | None:
+        row = self._connection.execute(
+            'SELECT ' + _FACT_COLUMNS + ' FROM documentary_facts WHERE fact_id=?', (fact_id,),
+        ).fetchone()
+        return _decode_fact(row) if row is not None else None
+
+    def get_extraction_facts(self, extraction_id: str) -> tuple[DocumentaryFact, ...]:
+        rows = self._connection.execute(
+            'SELECT ' + _FACT_COLUMNS + ' FROM documentary_facts '
+            'WHERE extraction_id=? ORDER BY fact_key', (extraction_id,),
+        ).fetchall()
+        return tuple(_decode_fact(row) for row in rows)
+
+    def associate_fact_page(self, page: FactPage) -> WriteOutcome:
+        with self.transaction():
+            source = self._connection.execute(
+                'SELECT e.version_id FROM documentary_facts f JOIN extractions e '
+                'ON e.extraction_id=f.extraction_id WHERE f.fact_id=?', (page.fact_id,),
+            ).fetchone()
+            if source is None:
+                raise KeyError('Unknown documentary fact')
+            version_id = source[0]
+            known = self._connection.execute(
+                'SELECT 1 FROM version_pages WHERE version_id=? AND page_number=?',
+                (version_id, page.page_number),
+            ).fetchone()
+            if known is None:
+                raise ValueError('Fact page must already be known in its source version')
+            old = self._connection.execute(
+                'SELECT version_id FROM fact_pages WHERE fact_id=? AND page_number=?',
+                (page.fact_id, page.page_number),
+            ).fetchone()
+            if old is not None:
+                if old[0] != version_id:
+                    raise ReproducibilityConflict('Fact page belongs to a different version')
+                return WriteOutcome.IDENTICAL
+            self._connection.execute(
+                'INSERT INTO fact_pages (fact_id, version_id, page_number) VALUES (?, ?, ?)',
+                (page.fact_id, version_id, page.page_number),
+            )
+            return WriteOutcome.CREATED
+
+    def get_fact_pages(self, fact_id: str) -> tuple[FactPage, ...]:
+        rows = self._connection.execute(
+            'SELECT fact_id, page_number FROM fact_pages WHERE fact_id=? ORDER BY page_number',
+            (fact_id,),
+        ).fetchall()
+        return tuple(FactPage(*row) for row in rows)
+
+
+_FACT_COLUMNS = ('fact_id, extraction_id, fact_key, value_state, value_kind, coefficient, '
+                 'scale, text_value, currency, reason_code, created_at')
+
+
+def _decode_fact(row: tuple[Any, ...]) -> DocumentaryFact:
+    (identity, extraction, key, state, kind, coefficient, scale, text, currency,
+     reason, created_at) = row
+    value = ExactDecimal(coefficient, scale) if kind == 'decimal' else text
+    return DocumentaryFact(identity, extraction, key, CanonicalValue(
+        state=ValueState(state), value=value,
+        currency=CurrencyCode(currency) if currency is not None else None, reason_code=reason,
+    ), created_at)

@@ -11,7 +11,7 @@ from src.persistence import open_database
 
 # Explicit initialization; creates directories/file only in this mode.
 with open_database(path, mode="create", application_revision="release-or-build-id") as db:
-    assert db.status.current_version == 3
+    assert db.status.current_version == 4
 
 # Existing file only; applies pending known migrations.
 with open_database(path, mode="migrate", application_revision="release-or-build-id") as db:
@@ -94,7 +94,7 @@ defaults to `development`, and never invokes Git.
 `verify_schema` checks FK activation, control-table columns, contiguous history,
 known versions, exact checksums and audit metadata, then runs `integrity_check`
 and `foreign_key_check`. Pending versions are returned, not applied in verification.
-An empty existing file returns version 0/pending 1, 2 and 3 without bootstrap or writes.
+An empty existing file returns version 0/pending 1, 2, 3 and 4 without bootstrap or writes.
 
 Specific errors distinguish configuration, invalid definitions/history, unknown
 future versions, checksum changes, execution failures and integrity failures.
@@ -122,8 +122,8 @@ implemented. Subsequent migrations must preserve the migration-ledger contract.
 It adds no document interpretation or economic tables. All foreign keys use
 RESTRICT for both deletion and updates; child lookup indexes accompany them.
 Version 1 bytes and checksums remain unchanged. Old infrastructure tests explicitly
-inject the v1 catalog; identity/evidence tests inject v2. Document tests exercise
-the current packaged catalog and the upgrade from v2.
+inject the v1 catalog; identity/evidence tests inject v2 and document tests inject v3. Fact tests exercise
+the current packaged catalog and the upgrade from v3.
 
 Pure frozen records and ID constructors live in `src.canonical.evidence`.
 `src.persistence.evidence.EvidenceRepository` takes the infrastructure connection
@@ -207,3 +207,79 @@ Page associations also reject incompatible reuse of an ordinal or physical page.
 Group chain registration in `repository.transaction()` for all-or-nothing writes.
 Methods return frozen contracts, ordered tuples, or write outcomes, never SQL rows.
 This increment neither imports corpus documents nor adapts `Nomina`.
+
+
+## Documentary facts (schema 4)
+
+`0004_documentary_facts.sql` adds only `documentary_facts` and `fact_pages`.
+`src.canonical.facts` defines immutable `FactDraft`, `DocumentaryFact` and `FactPage`.
+A draft is one stable field key and one existing `CanonicalValue`; binding it to an
+extraction produces `fact_id(extraction_id, fact_key)`. The value is deliberately
+excluded from identity. Different content under that identity is a reproducibility
+conflict; no classification, observation or derived amount is introduced.
+
+Values use a nullable kind (`decimal`/`text`), signed INTEGER coefficient, INTEGER
+scale and TEXT value. No REAL is used. SQL checks mirror value/state combinations,
+normalized decimals, currency format and required reasons. All seven existing
+states round-trip, including unreliable candidates or no candidate. Currency NULL
+means unknown currency and never defaults to EUR. Created timestamps survive
+identical registrations. Fact queries order by key, independently of insertion.
+
+`EvidenceRepository` adds register/get/query facts and associate/query fact pages,
+using the same savepoint transaction infrastructure. Page association is explicit:
+it requires a known page in the fact's extraction version. The repository obtains
+the version from the existing chain, not caller guesses. `fact_pages` stores that
+version for a restrictive composite FK to `version_pages`; its fact FK is also
+restrictive. Therefore referenced page evidence cannot be deleted or reassigned.
+The repository enforces that the stored version belongs to the fact's extraction;
+FKs independently enforce both endpoints. Raw SQL is not a substitute for this
+cross-chain repository check. Empty associations mean no exact supporting page is
+recorded, even when the encompassing document has known pages. No page assignment
+is performed by the adapter. Query results are ordered by physical page number.
+
+## Legacy Nomina adapter (nomina-facts/v1)
+
+`src.nomina_facts.adapt_nomina` is outside parsers and pure canonical contracts.
+It returns deterministic drafts, without a connection, extraction ID, timestamp or
+page assignment. Callers bind drafts to an extraction and persist separately; the
+adapter revision must identify this projection in extraction metadata. It accepts
+only `Nomina`, not standalone `Finiquito` or `CertificadoRetenciones` instances.
+
+Keys `nomina.<field>` cover all 33 scalar stored fields (including the nine inherited
+fields). They preserve identifiers, employer/CIF, year/month/period, type, processable
+flag, notes, categories, intervals/dates, components, printed totals and bases.
+`total_deducciones` is a calculated property and is deliberately never accessed.
+All 11 fields of each `ConceptoNomina` are copied, including code, label, parser
+category, column, amount, original amount text, atraso flag, percentage, units,
+price and base. The adapter neither interprets these labels nor reconciles totals.
+
+Concept keys are `nomina.conceptos.<group-hash>.<occurrence>.<field>`, with the group
+hash over the exact code and column. Occurrence is zero-based within that group;
+it never depends on amount and is unaffected by insertion in unrelated groups.
+There is no individual concept ID or location in the legacy model. Reordering
+entries with the same code/column can change their correspondence: the adapter
+cannot infer stable identities across that change. `source_position` preserves the
+original list position as metadata, not identity. Empty concept lists yield no
+concept facts and do not prove that the PDF contains no concepts.
+
+Legacy uncertainty is preserved explicitly:
+
+- `None` becomes UNKNOWN with `legacy.absence_unspecified`, never NOT_PRESENT.
+- Zero in a decimal field remains an exact zero candidate, marked UNRELIABLE with
+  `legacy.zero_origin_unknown`: a supplied zero cannot be distinguished from the
+  model's zero default. It is never converted into absence.
+- Other stored values are PRESENT with `legacy.normalized_value`. PRESENT asserts
+  observation in the normalized model, not independent evidence of printed text.
+- Text, including empty text, is copied; enum values and boolean flags use their
+  explicit textual representations. Year/month and source position are exact integers.
+- Currency is unknown unless supplied explicitly from documentary evidence. Such a
+  supplied currency applies only to fields with monetary units, not percentages,
+  unit counts, dates or labels; this is not an aggregation classification.
+
+The legacy model stores floats. Conversion uses `Decimal(str(float))`, the shortest
+round-trip decimal spelling, then the certified exact-decimal constructor, without
+quantization or rounding. This cannot recover pre-float precision or original PDF
+spelling. Non-finite numbers, excessive scale or coefficient overflow fail explicitly.
+Original `importe_texto` is independently retained; disagreement with `importe`
+is not repaired. The adapter computes no payroll sums, differences or economic
+classification, and never selects or deduplicates documents/versions.

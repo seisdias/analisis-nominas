@@ -2,6 +2,8 @@
 
 import sqlite3
 from dataclasses import replace
+from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 
@@ -28,11 +30,32 @@ from src.canonical.evidence import (
 from src.persistence import (
     Migration,
     MigrationChecksumError,
-    load_migrations,
-    open_database,
-    verify_schema,
+)
+from src.persistence import (
+    load_migrations as packaged_migrations,
+)
+from src.persistence import (
+    open_database as packaged_open_database,
+)
+from src.persistence import (
+    verify_schema as packaged_verify_schema,
 )
 from src.persistence.evidence import EvidenceRepository, WriteOutcome
+
+
+# These are v3 scenarios; test_facts.py tests the packaged v4 and its upgrade.
+def load_migrations():
+    return packaged_migrations()[:3]
+
+
+def open_database(path: str | Path, *, mode: Literal['create', 'migrate', 'verify'] = 'verify',
+                  **kwargs: Any):
+    kwargs.setdefault('migrations', load_migrations())
+    return packaged_open_database(path, mode=mode, **kwargs)
+
+
+def verify_schema(connection):
+    return packaged_verify_schema(connection, load_migrations())
 
 
 @pytest.fixture
