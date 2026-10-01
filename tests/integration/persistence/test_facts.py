@@ -2,6 +2,8 @@
 
 import sqlite3
 from dataclasses import replace
+from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 
@@ -33,11 +35,32 @@ from src.canonical.facts import DocumentaryFact, FactDraft, FactPage, fact_id
 from src.persistence import (
     Migration,
     MigrationChecksumError,
-    load_migrations,
-    open_database,
-    verify_schema,
+)
+from src.persistence import (
+    load_migrations as packaged_migrations,
+)
+from src.persistence import (
+    open_database as packaged_open_database,
+)
+from src.persistence import (
+    verify_schema as packaged_verify_schema,
 )
 from src.persistence.evidence import EvidenceRepository, WriteOutcome
+
+
+# V4-specific assertions remain isolated; test_economics.py tests packaged v5.
+def load_migrations():
+    return packaged_migrations()[:4]
+
+
+def open_database(path: str | Path, *, mode: Literal['create', 'migrate', 'verify'] = 'verify',
+                  **kwargs: Any):
+    kwargs.setdefault('migrations', load_migrations())
+    return packaged_open_database(path, mode=mode, **kwargs)
+
+
+def verify_schema(connection):
+    return packaged_verify_schema(connection, load_migrations())
 
 
 @pytest.fixture

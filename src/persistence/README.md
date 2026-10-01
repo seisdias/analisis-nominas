@@ -2,7 +2,8 @@
 
 Infrastructure only. This package does not import `Nomina`, historical
 `DatabaseService`, parsers, UI or domain repositories. There is no default
-database path, no economic table and no automatic ingestion.
+database path or automatic ingestion. Documentary evidence and versioned economic
+interpretations occupy separate tables.
 
 ## Opening
 
@@ -11,7 +12,7 @@ from src.persistence import open_database
 
 # Explicit initialization; creates directories/file only in this mode.
 with open_database(path, mode="create", application_revision="release-or-build-id") as db:
-    assert db.status.current_version == 4
+    assert db.status.current_version == 5
 
 # Existing file only; applies pending known migrations.
 with open_database(path, mode="migrate", application_revision="release-or-build-id") as db:
@@ -94,7 +95,7 @@ defaults to `development`, and never invokes Git.
 `verify_schema` checks FK activation, control-table columns, contiguous history,
 known versions, exact checksums and audit metadata, then runs `integrity_check`
 and `foreign_key_check`. Pending versions are returned, not applied in verification.
-An empty existing file returns version 0/pending 1, 2, 3 and 4 without bootstrap or writes.
+An empty existing file returns version 0/pending 1, 2, 3, 4 and 5 without bootstrap or writes.
 
 Specific errors distinguish configuration, invalid definitions/history, unknown
 future versions, checksum changes, execution failures and integrity failures.
@@ -122,8 +123,8 @@ implemented. Subsequent migrations must preserve the migration-ledger contract.
 It adds no document interpretation or economic tables. All foreign keys use
 RESTRICT for both deletion and updates; child lookup indexes accompany them.
 Version 1 bytes and checksums remain unchanged. Old infrastructure tests explicitly
-inject the v1 catalog; identity/evidence tests inject v2 and document tests inject v3. Fact tests exercise
-the current packaged catalog and the upgrade from v3.
+inject the v1 catalog; identity/evidence tests inject v2, document tests inject v3, and fact tests inject
+v4. Interpretation tests exercise the current packaged catalog and upgrade from v4.
 
 Pure frozen records and ID constructors live in `src.canonical.evidence`.
 `src.persistence.evidence.EvidenceRepository` takes the infrastructure connection
@@ -283,3 +284,89 @@ spelling. Non-finite numbers, excessive scale or coefficient overflow fail expli
 Original `importe_texto` is independently retained; disagreement with `importe`
 is not repaired. The adapter computes no payroll sums, differences or economic
 classification, and never selects or deduplicates documents/versions.
+
+
+## Versioned interpretation (schema 5)
+
+`0005_economic_observations.sql` adds exactly `rules`, `assessments`,
+`economic_observations` and `observation_facts`. All foreign keys use RESTRICT on
+update/delete. No new economic triggers, aggregation, duplicate resolution or
+corpus ingestion is introduced. `src.canonical.economics` contains pure contracts;
+`src.persistence.economics.EconomicRepository` extends the existing repository to
+reuse connections, documentary lookups and savepoint transactions.
+
+A rule ID depends on family, name, declared version and implementation SHA256.
+Changed implementation bytes therefore produce a distinct rule even if a caller
+retains the declared version. The direct mapping rule fingerprints the exact
+packaged `src/economic_mapping.py` resource, independently of cwd; synthetic rules
+can provide an explicit implementation hash. The hash identifies that module, not
+a snapshot of the entire Python environment. Rule execution is separate from SQL.
+
+An assessment ID depends on logical document, rule and input signature. A sorted,
+unique JSON manifest stores every input fact ID and its content fingerprint. That
+fingerprint includes extraction ID, field key and full canonical value, including
+state, currency and reason, but excludes operational timestamps. The signature
+uses the existing versioned canonical serialization, so input order is irrelevant.
+The repository verifies recorded fact content and membership in the assessed
+logical document before accepting assessments or observations. Manifest entries
+are JSON rather than a fifth table; their existence/content checks are repository
+invariants. Normal repository APIs cannot edit/delete input facts; raw SQL must not
+be treated as an equivalent interface for preserving these invariants.
+
+Assessment states are usable, pending, ambiguous, excluded and incomplete.
+Assessment status is immutable for one identity. A later different interpretation
+requires distinct inputs or rule identity, not overwriting the earlier evaluation.
+An empty input set can be pending/incomplete, but cannot be usable.
+
+Each observation identifies one magnitude with a stable key within its assessment.
+It stores independent scope, nature, pay behavior, temporal character, payment
+form, settlement context, status, eligibility and confidence. Open text nature and
+magnitude labels do not establish a complete cross-company taxonomy. Numeric
+values use the existing CanonicalValue and INTEGER coefficient/scale, never REAL;
+all absence states and unreliable decimal candidates remain distinguishable.
+Usable requires a present value. Candidate additionally requires a usable parent
+assessment; excluded assessments cannot yield eligible observations. Candidate
+is not permission to include anything in a KPI: there is no aggregation here.
+
+Liquidation month, accrual interval and payment date each have separate states
+and reasons. PRESENT requires valid ISO values; UNKNOWN does not carry invented
+dates, NOT_APPLICABLE requires a reason, and UNRELIABLE can retain a candidate.
+An accrual candidate requires both ordered ISO endpoints. Partially known dates
+remain documentary evidence until a rule can provide an interval; payroll month
+is never expanded into a worked-month interval. Unknown currency remains unknown.
+
+`register_observation(observation, fact_ids)` atomically creates both the row and
+a nonempty, immutable N:M support set. Supporting facts must be assessment inputs.
+Repeating an equivalent registration preserves its timestamp and returns identical;
+a different value, dimension or support set conflicts. There is no bare-observation
+write API and no later append-link operation that could silently change meaning.
+Reads return typed observations with their sorted fact IDs. SQL foreign keys protect
+both endpoints of every link; nonempty support and cross-document consistency are
+repository invariants, not complex triggers. Explicit `repository.transaction()`
+can group rule, assessment, observations and links into a single atomic operation.
+
+### First rule: documentary_mapping / direct_totals / 1
+
+`evaluate_direct_totals(document_id, facts)` uses only caller-supplied facts; it
+does not scan documents or select versions. It requires both real field keys:
+
+- `nomina.total_devengado` -> `documentary_gross`;
+- `nomina.liquido_percibir` -> `documentary_net`.
+
+With PRESENT decimal values from one extraction, it copies those values unchanged
+into two total-scope observations with confidence mapped and eligibility
+evidence_only. Nature, pay behavior, temporal character, payment form, settlement
+context and every time axis stay unknown. These are documentary gross/net amounts,
+not annual salaries, employer costs or amounts approved for aggregation.
+
+Multiple input extractions produce ambiguous with no observations, even if their
+amounts agree. Repeated fact identities are rejected, not deduplicated. Missing
+keys or nonnumeric target values produce incomplete; target absence/uncertainty
+produces pending. In particular, a legacy UNRELIABLE zero never becomes a reliable
+zero. A documentary PRESENT zero remains present. The pair requirement is a
+conservative completeness condition for this first rule, not a claim that an
+isolated total can never be interpretable by a future separate rule.
+
+No sums, annualization, extra-pay inclusion, tax/SS interpretations, fixed/variable
+classification, settlements, duplicate resolution, version preference, ALTEN,
+KPI calculation or updates to documentary facts are implemented.
