@@ -12,7 +12,7 @@ from src.persistence import open_database
 
 # Explicit initialization; creates directories/file only in this mode.
 with open_database(path, mode="create", application_revision="release-or-build-id") as db:
-    assert db.status.current_version == 5
+    assert db.status.current_version == 6
 
 # Existing file only; applies pending known migrations.
 with open_database(path, mode="migrate", application_revision="release-or-build-id") as db:
@@ -95,7 +95,7 @@ defaults to `development`, and never invokes Git.
 `verify_schema` checks FK activation, control-table columns, contiguous history,
 known versions, exact checksums and audit metadata, then runs `integrity_check`
 and `foreign_key_check`. Pending versions are returned, not applied in verification.
-An empty existing file returns version 0/pending 1, 2, 3, 4 and 5 without bootstrap or writes.
+An empty existing file returns version 0/pending 1, 2, 3, 4, 5 and 6 without bootstrap or writes.
 
 Specific errors distinguish configuration, invalid definitions/history, unknown
 future versions, checksum changes, execution failures and integrity failures.
@@ -124,7 +124,8 @@ It adds no document interpretation or economic tables. All foreign keys use
 RESTRICT for both deletion and updates; child lookup indexes accompany them.
 Version 1 bytes and checksums remain unchanged. Old infrastructure tests explicitly
 inject the v1 catalog; identity/evidence tests inject v2, document tests inject v3, and fact tests inject
-v4. Interpretation tests exercise the current packaged catalog and upgrade from v4.
+v4, and interpretation tests inject v5. Relation tests exercise the current
+packaged catalog and upgrade from v5.
 
 Pure frozen records and ID constructors live in `src.canonical.evidence`.
 `src.persistence.evidence.EvidenceRepository` takes the infrastructure connection
@@ -370,3 +371,80 @@ isolated total can never be interpretable by a future separate rule.
 No sums, annualization, extra-pay inclusion, tax/SS interpretations, fixed/variable
 classification, settlements, duplicate resolution, version preference, ALTEN,
 KPI calculation or updates to documentary facts are implemented.
+
+
+## Explicit relations and candidate selection (schema 6)
+
+`0006_economic_relations.sql` adds only `document_relations` and
+`observation_relations`. Their immutable contracts live in `src.canonical.relations`;
+`RelationRepository` extends existing transactional repositories. Both tables store
+source, target, type, optional rule FK, optional reason code and created timestamp.
+At least rule or reason is mandatory; all FKs are restrictive. Self-relations are
+rejected by both Python and SQL. There is no generic graph or human-decision table.
+
+Relation identity is determined by endpoints and type, with separate namespaces
+for documents and observations. Rule/reason are content, not identity: incompatible
+assertions for the same relation conflict rather than creating an unnoticed second
+assertion. Identical repetition retains the original timestamp.
+
+Directions are explicit:
+
+| Entity | Type | Meaning of source -> target |
+|---|---|---|
+| Document | supersedes | replacement document -> superseded document |
+| Document | duplicate_of | symmetric assertion of duplication, no preferred representative |
+| Document | complements | symmetric complementary documents, no addition instruction |
+| Document | same_logical_unit_pending_reconciliation | symmetric unresolved pairing |
+| Observation | replaces | replacement observation -> replaced observation |
+| Observation | contained_in | component/contained observation -> containing observation |
+| Observation | adjusts | adjustment -> adjusted observation |
+| Observation | complements | symmetric complementary observations |
+
+Symmetric endpoints are sorted as canonical ID strings in the contract and checked
+in SQL. Reversing such an assertion produces the same ID and stored row; ordering
+is only storage normalization, never selection of a preferred document. Directed
+relations retain both direction and distinct IDs when reversed.
+
+`src.candidate_selection.select_candidates` reads the complete stored set under
+one snapshot using a typed protocol. It returns typed evidence plus a per-observation
+selection status/reason. It does not persist these outcomes or change economic
+statuses, eligibility, assessments, facts or relations. It works on read-only SQLite.
+
+Basic admissibility requires a usable assessment, usable economic status, explicit
+candidate eligibility, a PRESENT exact decimal, nonempty support included in the
+assessment manifest, verified fact fingerprints and matching logical-document
+provenance. More than one source version within an assessment remains ambiguous.
+No exact page is invented or required when only documentary scope is known.
+Currency and confidence remain as recorded; candidate selection is not approval
+for adding amounts, mixing currencies or accepting inference in any future KPI.
+
+V5 has no active-assessment pointer. Remaining candidate-producing assessments for
+one logical document compete: if more than one remains, their observations are
+ambiguous. Dates, IDs, equal amounts and insertion order never establish an active
+assessment. Sorting returned results by ID is solely deterministic presentation.
+
+Only explicit exclusion/substitution effects are applied:
+
+- `supersedes` disqualifies observations of the target document. The source must
+  independently pass admissibility; recording the relation does not promote it.
+- `replaces` disqualifies the target observation. An inadmissible replacement does
+  not reactivate the old one. Each explicitly replaced target stays out, including
+  cycles; there is no general cycle repair or graph resolution.
+- Multiple admissible successors/replacements for a single target remain ambiguous.
+  All overlapping disputes are collected before applying their deferrals; iteration
+  order must not leave an arbitrary surviving source.
+- A symmetric duplicate assertion with neither document explicitly superseded leaves
+  both sides ambiguous. A pending-reconciliation pairing leaves them pending. A
+  document already explicitly superseded stays excluded, without using the symmetric
+  edge to designate a winner. Conflicting unresolved document evidence can therefore
+  still block an observation-level replacement from becoming a candidate.
+- `contained_in`, `adjusts` and either kind of `complements` do not remove a side or
+  change amounts. Both sides can remain candidates; that does not mean both may be
+  aggregated. Containment/additivity policy is deliberately unimplemented.
+
+Excluded/evidence-only observations are never promoted. Pending, ambiguous and
+incomplete assessments remain deferred. Input fingerprint failures become pending;
+malformed stored records or missing support fail the read closed rather than return
+partially trusted candidates. All of these are selection diagnostics, not human
+resolution decisions. There is no duplicate inference, version-by-date selection,
+extra-pay policy, annual total, aggregation, KPI, ALTEN logic or real-corpus ingestion.

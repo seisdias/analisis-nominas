@@ -2,6 +2,8 @@
 
 import sqlite3
 from dataclasses import replace
+from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 
@@ -36,9 +38,33 @@ from src.canonical.evidence import (
 )
 from src.canonical.facts import DocumentaryFact, FactDraft
 from src.economic_mapping import direct_totals_rule, evaluate_direct_totals
-from src.persistence import load_migrations, open_database, verify_schema
+from src.persistence import (
+    load_migrations as packaged_migrations,
+)
+from src.persistence import (
+    open_database as packaged_open_database,
+)
+from src.persistence import (
+    verify_schema as packaged_verify_schema,
+)
 from src.persistence.economics import EconomicRepository
 from src.persistence.evidence import WriteOutcome
+
+
+# Preserve v5-specific assertions; test_relations.py exercises the packaged v6.
+def load_migrations():
+    return packaged_migrations()[:5]
+
+
+def open_database(path: str | Path, *, mode: Literal['create', 'migrate', 'verify'] = 'verify',
+                  **kwargs: Any):
+    kwargs.setdefault('migrations', load_migrations())
+    return packaged_open_database(path, mode=mode, **kwargs)
+
+
+def verify_schema(connection):
+    return packaged_verify_schema(connection, load_migrations())
+
 
 STAMP = '2026-01-01T00:00:00Z'
 
