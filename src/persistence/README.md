@@ -448,3 +448,44 @@ malformed stored records or missing support fail the read closed rather than ret
 partially trusted candidates. All of these are selection diagnostics, not human
 resolution decisions. There is no duplicate inference, version-by-date selection,
 extra-pay policy, annual total, aggregation, KPI, ALTEN logic or real-corpus ingestion.
+
+### Portable manual decisions (schema v7)
+
+`DecisionRepository` stores immutable `ManualDecision` records. The deliberately
+minimal v1 decision is `acknowledge_documentary_fact`, with payload
+`{"acknowledged":true}` and a local actor alias. It acknowledges documentary
+content only: no economic effect, version selection, or ALTEN resolution. There
+is consequently no active/revoked winner state; effectful decision types and their
+revocation contracts remain future work. SQL guards forbid UPDATE and DELETE;
+Python validates the polymorphic target instead of claiming an invalid SQL FK.
+
+Identity includes decision type, target, payload, precondition, and actor; the
+operational timestamp is excluded. Repeated registration preserves the first
+recorded timestamp. Portable export is sorted UTF-8 JSON with explicit
+`manual-decisions` contract/version 1; identity hashing reuses canonical
+serialization. Unknown formats, floats, duplicate JSON keys, altered identities,
+and conflicting duplicate records fail explicitly. No absolute file locations or
+unnecessary derived data are exported. This is integrity checking, not a digital
+signature authenticating the human author.
+
+The `manual-fact-evidence/v1` precondition hashes the target fact, all facts and
+known fact pages in its extraction, extraction metadata, logical document and
+version, version pages, corpus/person assignment, and source file metadata
+(including availability). It omits operational timestamps and file locations so
+rebuilding or relocating identical evidence does not invalidate a decision.
+Unrelated interpretations/documents are outside acknowledgement scope. Values,
+uncertainty, missing targets, page changes, and changed evidence invalidate replay.
+Export still preserves obsolete human records; import validates **all** stored
+and incoming decisions and fails atomically with `DecisionPreconditionConflict`.
+A conflict blocks publication; validation is a snapshot, never permanent approval
+if evidence subsequently changes. This increment performs no economic actions.
+
+`rebuild_with_decisions(new_path, portable_bytes, populate)` exclusively creates a
+new file, migrates it, calls the supplied deterministic population function, and
+replays decisions in one population transaction. Existing paths (including
+symlinks) are rejected. On failure no success result is returned; the new schema
+file remains for inspection with population rolled back. The source is never
+opened or overwritten. On success the returned `decisions_validated` flag covers
+only this gate; activating/publishing a database and general corpus reconstruction
+remain outside this API. Schema ledger/application timestamps need not be
+byte-identical between databases; evidence/decisions are semantically equivalent.

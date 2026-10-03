@@ -36,9 +36,26 @@ from src.canonical.evidence import (
 )
 from src.canonical.facts import DocumentaryFact, FactDraft
 from src.canonical.relations import DocumentRelation, ObservationRelation
-from src.persistence import load_migrations, open_database, verify_schema
+from src.persistence import load_migrations as packaged_migrations
+from src.persistence import open_database as packaged_open_database
+from src.persistence import verify_schema as packaged_verify_schema
 from src.persistence.evidence import WriteOutcome
 from src.persistence.relations import RelationRepository
+
+
+# Retain the certified v6 catalog and assertions as later migrations are added.
+def load_migrations():
+    return packaged_migrations()[:6]
+
+
+def open_database(path, **kwargs):
+    kwargs.setdefault('migrations', load_migrations())
+    return packaged_open_database(path, **kwargs)
+
+
+def verify_schema(connection):
+    return packaged_verify_schema(connection, load_migrations())
+
 
 STAMP = '2026-01-01T00:00:00Z'
 DOC_TYPES = ('duplicate_of', 'supersedes', 'complements', 'same_logical_unit_pending_reconciliation')
