@@ -533,3 +533,57 @@ plan; ordinary extraction records also retain the binding revision. No parser,
 legacy model, DatabaseService, economic taxonomy, runtime database or schema is
 changed by this increment. Joint private certification uses one temporary v7
 SQLite; the definitive runtime build and global T6.12 certification remain later.
+
+### Global logical-state comparison (v7, comparison contract v1)
+
+`CanonicalStateReader.read()` returns immutable `canonical_content`, per-table
+counts and a SHA256 fingerprint. It verifies migration history/integrity/FKs and
+reads all 21 application tables in one read transaction. The representation is
+`canonical_bytes` of an envelope with contract `canonical-persisted-state/v1`,
+`schema_version=7`, comparison mode, and the tables. Table and column names sort
+lexically. Each row follows that column order; rows sort by their canonical typed
+bytes. NULL, integer and text remain distinct. SHA256 hashes those canonical bytes,
+not the SQLite file. Counts equal row-list lengths and comparisons can additionally
+check the exact canonical bytes, avoiding reliance on the hash alone.
+
+**Logical-mode exclusions (exhaustive):**
+
+- `schema_migrations.applied_at`: operational time of schema initialization.
+- `created_at` in `persons`, `employers`, `corpora`, `source_files`,
+  `logical_documents`, `document_versions`, `extractions`, `documentary_facts`,
+  `rules`, `assessments`, `economic_observations`, `document_relations`, and
+  `observation_relations`: operational registration timestamps of immutable records.
+- `file_locations.first_seen_at`: operational discovery time.
+- `ingest_runs.started_at` and `finished_at`: operational execution times. Run
+  identity, plan/configuration, status and all item outcomes remain included.
+
+No other persisted columns are excluded. In particular,
+`manual_decisions.created_at` and `created_by` retain human audit history;
+`schema_migrations.application_revision` and migration checksums remain included.
+JSON/text values are preserved verbatim, including documentary payloads: the reader
+does not invent equivalence by reformatting JSON or normalizing Unicode/paths.
+Relative locations/filenames are semantic in the current contract. Absolute corpus
+roots and the database filename are never persisted by these APIs, so relocating
+an equivalent root or choosing another SQLite path does not change the fingerprint.
+Different corpus/person IDs or relative locations are not considered equivalent.
+
+Strict mode (`include_operational_metadata=True`) includes **every** persisted
+column, including all timestamps. It uses a distinct mode tag. Use it for repeated
+execution on the same database; use logical mode for independent rebuilds with
+different operational times. Compare like modes only. Physical row order, SQLite
+pages, rowids, indexes, filesystem metadata, database size and binary file hashes
+are not comparison inputs. The representation contains private evidence in memory;
+certification prints only fingerprints and counts, never its raw content.
+
+Unknown/missing application tables and unsupported schema versions fail closed.
+Any additional column in a known table is included, not silently discarded.
+Unsupported REAL/BLOB values fail instead of introducing numeric coercion.
+Changing this projection requires a new comparison contract; v7 itself is unchanged.
+
+Synthetic certification rebuilds from relocated sources, changes enumeration
+order, reapplies a nonempty portable decision set, and includes both relation
+families. Private global certification performs only build A, replay A, build B,
+using the six certified corpora and an explicitly empty real decision set. It
+compares exact logical bytes, all table counts, all inventory classifications and
+ALTEN identities. Replay A also compares strict state, proving timestamps and
+history remain unchanged. It never creates the definitive runtime database.
