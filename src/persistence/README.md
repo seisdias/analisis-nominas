@@ -489,3 +489,47 @@ opened or overwritten. On success the returned `decisions_validated` flag covers
 only this gate; activating/publishing a database and general corpus reconstruction
 remain outside this API. Schema ledger/application timestamps need not be
 byte-identical between databases; evidence/decisions are semantically equivalent.
+
+### Canonical ingestion orchestration (schema remains v7)
+
+`canonical_ingestion.ingest` receives registered corpus IDs, explicit filesystem
+roots, processors and optionally an explicit hashed source plan. `inventory`
+scans only those roots; normalized relative paths and hashes enter the plan, not
+absolute roots. Processing is serial, ordered by corpus/hash/path. Input bytes are
+verified before parsing; completed items are rehashed but never parsed or written
+again. A completed item whose source changed fails explicitly without rewriting
+its terminal history. Failed items also remain terminal: retries require an
+explicitly different plan, not an implicit new attempt.
+
+Each PDF's source metadata, locations, all documentary units, facts,
+interpretations and processed item commit in one repository transaction. On any
+failure those new artifacts roll back, the item records a sanitized failure, and
+processing continues. Already completed PDFs survive. Positive omissions are
+recorded as skipped with a reason and physical evidence. Non-textual PDFs are
+skipped by the extraction binding; certified annual-document exclusions can be
+supplied explicitly in the plan. No filename heuristic classifies documents in
+the orchestration core.
+
+`OrdinaryProcessor` injects an existing frozen parser into the shared extractor,
+then reuses `adapt_nomina`, repositories and `evaluate_direct_totals`. It handles
+a whole-PDF model; explicit multi-unit preparations are committed together.
+Logical origin includes physical hash, relative location and explicit segment;
+it is never employer/month alone. Copies are not economically deduplicated here.
+Company/CIF remain documentary facts without inferring employer equivalences.
+Single-page scopes can support exact fact pages; multi-page model fields retain
+only version scope. Currency is not guessed. The only ordinary observations are
+the certified direct-total mappings, still `evidence_only`.
+
+`AltenProcessor` uses the existing page parser, existing certificate filter, and
+`integrate_alten` without an intermediate legacy SQLite. Period and version keys
+are transferred unchanged. Assessments describe the PDF's submitted unresolved
+evidence (pending/ambiguous); they never pick a version or create observations.
+When a group spans PDFs, multiple non-usable assessments may coexist. This is not
+a final reconciliation or selection of an active assessment. All versions remain
+under the same canonical logical group.
+
+Parser/binding/adapter implementation fingerprints are included in the explicit
+plan; ordinary extraction records also retain the binding revision. No parser,
+legacy model, DatabaseService, economic taxonomy, runtime database or schema is
+changed by this increment. Joint private certification uses one temporary v7
+SQLite; the definitive runtime build and global T6.12 certification remain later.
