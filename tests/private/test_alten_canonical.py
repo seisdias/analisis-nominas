@@ -73,6 +73,7 @@ def test_certified_alten_52_groups_78_versions_zero_candidates(tmp_path):
         by_key = {v['version_key']: v for v in versions}
         for identity in first.version_ids:
             version = repo.get_version(identity)
+            assert version is not None
             original = by_key[version.segment_key]
             oracle = expected[version.segment_key]
             assert (original['period_key'], original['pdf_sha256'], original['page_number']) == (
@@ -81,7 +82,9 @@ def test_certified_alten_52_groups_78_versions_zero_candidates(tmp_path):
             assert [p.page_number for p in repo.get_version_pages(identity)] == [oracle['pagina']]
         for identity in first.extraction_ids:
             extraction = repo.get_extraction(identity)
+            assert extraction is not None
             version = repo.get_version(extraction.version_id)
+            assert version is not None
             facts = {f.fact_key: f for f in repo.get_extraction_facts(identity)}
             assert facts['legacy/payload'].value.value == by_key[version.segment_key]['payload']
             assert facts['legacy/resolution_status'].value.value == 'UNRESOLVED'

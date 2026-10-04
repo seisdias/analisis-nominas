@@ -6,7 +6,7 @@ from uuid import UUID
 
 from src.candidate_selection import select_candidates
 from src.canonical.evidence import Corpus, Person, corpus_id, person_id
-from src.canonical_ingestion import CorpusInput, ingest, inventory
+from src.canonical_ingestion import CorpusInput, PDFProcessor, ingest, inventory
 from src.ingestion_processors import AltenProcessor, OrdinaryProcessor
 from src.parsers.parser_factory import ParserFactory
 from src.persistence import load_migrations
@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_joint_six_companies_in_one_canonical_database(tmp_path):
     names = ('coritel', 'insis4', 'ineco', 'exceltic', 'altran', 'alten')
-    processors = {name: OrdinaryProcessor(ParserFactory().obtener_parser('insis' if name == 'insis4' else name))
+    processors: dict[str, PDFProcessor] = {name: OrdinaryProcessor(ParserFactory().obtener_parser('insis' if name == 'insis4' else name))
                   for name in names if name != 'alten'}
     processors['alten'] = AltenProcessor()
     manifests = {name: json.loads((ROOT/'data/private'/f'{name}-manifest.json').read_text())
@@ -68,11 +68,11 @@ def test_joint_six_companies_in_one_canonical_database(tmp_path):
                           'ineco': {'processed': 60, 'skipped': 1}, 'exceltic': {'processed': 8},
                           'altran': {'processed': 73, 'skipped': 5}, 'alten': {'processed': 52, 'skipped': 3}}
         assert db.connection.execute('SELECT count(DISTINCT corpus_id) FROM logical_documents').fetchone()[0] == 6
-        for corpus in corpora.values():
+        for corpus_identity in corpora.values():
             assert db.connection.execute(
                 "SELECT count(*) FROM documentary_facts f JOIN extractions e USING(extraction_id) "
                 "JOIN document_versions v USING(version_id) JOIN logical_documents d USING(document_id) "
-                "WHERE d.corpus_id=? AND f.fact_key IN ('nomina.empresa','payload/empresa')", (corpus,)
+                "WHERE d.corpus_id=? AND f.fact_key IN ('nomina.empresa','payload/empresa')", (corpus_identity,)
             ).fetchone()[0] > 0
         alten = corpora['alten']
         assert db.connection.execute('SELECT count(*) FROM logical_documents WHERE corpus_id=?', (alten,)).fetchone()[0] == 52

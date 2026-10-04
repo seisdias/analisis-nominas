@@ -7,32 +7,30 @@ from uuid import UUID
 from src.candidate_selection import select_candidates
 from src.canonical.decisions import encode_decisions
 from src.canonical.evidence import Corpus, Person, corpus_id, person_id
-from src.canonical_ingestion import CorpusInput, ingest, inventory
+from src.canonical_ingestion import CorpusInput, PDFProcessor, ingest, inventory
 from src.ingestion_processors import AltenProcessor, OrdinaryProcessor
 from src.manual_decisions import import_decisions
 from src.parsers.parser_factory import ParserFactory
-from src.persistence import load_migrations
-from src.persistence import open_database as packaged_open_database
-from src.persistence import verify_schema as packaged_verify_schema
+from src.persistence import open_database, verify_schema
 from src.persistence.decisions import DecisionRepository
 from src.persistence.state import CanonicalStateReader
-
-
-# This historical certification remains on its original v7 catalog.
-def open_database(path, **kwargs):
-    kwargs.setdefault('migrations', load_migrations()[:7])
-    return packaged_open_database(path, **kwargs)
-
-
-def verify_schema(connection):
-    return packaged_verify_schema(connection, load_migrations()[:7])
-
 
 ROOT = Path(__file__).resolve().parents[2]
 NAMES = ('coritel', 'insis4', 'ineco', 'exceltic', 'altran', 'alten')
 EXPECTED = {'coritel': {'processed': 17}, 'insis4': {'processed': 23, 'skipped': 2},
             'ineco': {'processed': 60, 'skipped': 1}, 'exceltic': {'processed': 8},
             'altran': {'processed': 73, 'skipped': 5}, 'alten': {'processed': 52, 'skipped': 3}}
+
+
+EXPECTED_SOURCE_COUNTS = {
+    'assessments': 259, 'corpora': 6, 'document_relations': 0, 'document_versions': 259,
+    'documentary_facts': 36470, 'economic_observations': 362, 'employers': 0,
+    'extractions': 259, 'fact_pages': 35969, 'file_locations': 244, 'ingest_items': 244,
+    'ingest_runs': 1, 'logical_documents': 233, 'manual_decisions': 0,
+    'observation_facts': 362, 'observation_relations': 0, 'persons': 1, 'rules': 2,
+    'schema_migrations': 8, 'source_files': 242, 'version_pages': 260,
+}
+HISTORICAL_V7_FINGERPRINT = '9e12297442f73805abf7207144363d44b51c6d2c5c1e9b9b516e303d2797387f'
 
 
 def test_global_two_builds_and_identical_replay(tmp_path):
@@ -43,7 +41,7 @@ def test_global_two_builds_and_identical_replay(tmp_path):
     snapshots, strict_snapshots, alten_identities, classifications, plans = [], [], [], [], []
     for label in ('a', 'b'):
         # Independent parser instances, database, schema ledger and operational times.
-        processors = {name: OrdinaryProcessor(ParserFactory().obtener_parser('insis' if name == 'insis4' else name))
+        processors: dict[str, PDFProcessor] = {name: OrdinaryProcessor(ParserFactory().obtener_parser('insis' if name == 'insis4' else name))
                       for name in NAMES if name != 'alten'}
         processors['alten'] = AltenProcessor()
         with open_database(tmp_path/f'build-{label}.sqlite', mode='create',
@@ -80,11 +78,11 @@ def test_global_two_builds_and_identical_replay(tmp_path):
             classifications.append(tuple(db.connection.execute(
                 'SELECT corpus_id,relative_path,expected_sha256,status,reason_code FROM ingest_items ORDER BY corpus_id,relative_path')))
             assert db.connection.execute('SELECT count(DISTINCT corpus_id) FROM logical_documents').fetchone()[0] == 6
-            for corpus in corpora.values():
+            for corpus_identity in corpora.values():
                 assert db.connection.execute(
                     "SELECT count(*) FROM documentary_facts f JOIN extractions e USING(extraction_id) "
                     "JOIN document_versions v USING(version_id) JOIN logical_documents d USING(document_id) "
-                    "WHERE d.corpus_id=? AND f.fact_key IN ('nomina.empresa','payload/empresa')", (corpus,)
+                    "WHERE d.corpus_id=? AND f.fact_key IN ('nomina.empresa','payload/empresa')", (corpus_identity,)
                 ).fetchone()[0] > 0
             groups = tuple(r[0] for r in db.connection.execute(
                 'SELECT document_id FROM logical_documents WHERE corpus_id=? ORDER BY document_id', (corpora['alten'],)))
@@ -106,11 +104,17 @@ def test_global_two_builds_and_identical_replay(tmp_path):
             assert db.connection.execute(
                 'SELECT count(*) FROM observation_facts l LEFT JOIN documentary_facts f USING(fact_id) WHERE f.fact_id IS NULL'
             ).fetchone()[0] == 0
-            assert verify_schema(db.connection).current_version == 7
+            assert verify_schema(db.connection).current_version == 8
             assert db.connection.execute('PRAGMA integrity_check').fetchall() == [('ok',)]
             assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []
             reader = CanonicalStateReader(db.connection)
             snapshots.append(reader.read())
+            assert dict(snapshots[-1].table_counts) == EXPECTED_SOURCE_COUNTS
+            assert b'canonical-persisted-state/v2' in snapshots[-1].canonical_content
+            assert snapshots[-1].fingerprint != HISTORICAL_V7_FINGERPRINT
+            audit = reader.read(include_derived_cache=True)
+            assert dict(audit.table_counts) == {**EXPECTED_SOURCE_COUNTS, 'derived_results': 0, 'derived_inputs': 0}
+            assert audit.fingerprint != snapshots[-1].fingerprint
             strict_snapshots.append(reader.read(include_operational_metadata=True))
             if label == 'a':
                 assert ingest(repo, list(reversed(bindings)), processors, sources=tuple(reversed(sources))) == result

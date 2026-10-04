@@ -1,9 +1,15 @@
 # Análisis de Nóminas
 
-Proyecto Python en fase temprana para extraer texto de PDFs laborales, interpretar
-formatos conocidos y consultar nóminas en SQLite y Streamlit. No incluye OCR.
-Alten, Altran, Exceltic, Ineco e Insis tienen parsers iniciales; Coritel devuelve
-un error explícito hasta disponer de una implementación fiable.
+Proyecto para extraer documentos laborales y conservar evidencia normalizada y
+trazable. Los seis parsers (Coritel, INSIS4, INECO, Exceltic, Altran y ALTEN) están
+certificados y congelados. No incluye OCR.
+
+La infraestructura canónica T6 está certificada y congelada: usa una única SQLite, esquema v8, SQL explícito y
+migraciones 0001–0008. Separa evidencia, interpretación, decisiones humanas y caché
+derivada reconstruible. ALTEN sigue `UNRESOLVED`, sin candidatas económicas.
+La UI y los comandos históricos siguientes usan la persistencia legacy; no crean
+la BD canónica definitiva. Véase el [contrato canónico](src/persistence/README.md)
+para reconstrucción, revisiones y certificación. No hay KPIs salariales nuevos.
 
 ## Instalación (Python 3.14.0)
 
@@ -20,14 +26,15 @@ es `data/runtime/nominas.sqlite`; para otra ruta: `python -m scripts.init_db --d
 Las ingestas locales se ejecutan como módulos, por ejemplo `python -m scripts.ingest_ineco`.
 La UI admite `ANALISIS_NOMINAS_DB`. Los importes opcionales todavía usan ceros por
 compatibilidad con el modelo: no deben interpretarse como extracción confirmada.
-Los parsers requieren periodo y totales reconocibles, rechazan descuadres y la
-persistencia rechaza IDs duplicados. No se garantiza cobertura de todos los formatos.
+Los hechos conservan los valores extraídos y sus incertidumbres; no se corrigen
+descuadres silenciosamente. No se garantiza cobertura de formatos no certificados.
 
 ## Validación
 
 ```bash
 ./scripts/check.sh
 python -m pytest -q
+python -m pytest -q --run-private  # suite completa; requiere corpus privado local
 python -m pytest --collect-only
 ```
 
@@ -49,6 +56,7 @@ La suite se organiza por responsabilidad:
 Los tests de `tests/private/` son locales y no se recogen por defecto:
 
 ```bash
+python -m pytest -q --run-private  # suite completa; requiere corpus privado local
 python -m pytest --collect-only --run-private
 # Solo con documentos propios y autorización: abre PDFs locales
 python -m pytest --run-private -m private

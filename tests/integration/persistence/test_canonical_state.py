@@ -148,6 +148,7 @@ def test_two_new_builds_portable_decisions_relations_and_same_db_replay(tmp_path
                                                 'complements', reason_code='synthetic', created_at=STAMP))
             if portable is None:
                 fact = repo.get_fact(assessments[0].inputs[0].fact_id)
+                assert fact is not None
                 decision = ManualDecision.create(fact.fact_id, repo.precondition_hash('documentary_fact', fact.fact_id),
                                                  created_by='synthetic-reviewer', created_at=STAMP)
                 repo.register_decision(decision)

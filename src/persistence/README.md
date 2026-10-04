@@ -642,3 +642,44 @@ They retain uncertainty/candidates for diagnostics and remain non-publishable.
 Stored stale/invalid results are not automatically deleted, updated, selected as
 inputs, or used to replace source evidence. Explicit cache eviction/recalculation
 is demonstrated with synthetic data; no production eviction policy or KPI exists.
+
+### T6.14 — certified and frozen (2026-10-04)
+
+Schema v8 / migrations 0001–0008: 23 tables, verified checksums, restrictive FKs,
+clean integrity checks. The source revision excludes the two derived-cache tables;
+global-with-cache remains a separate audit scope. Reference fingerprints:
+
+- Historical **v7/v1** only: `9e12297442f73805abf7207144363d44b51c6d2c5c1e9b9b516e303d2797387f`.
+- Certified **v8/v2 source**: `91897bea9083a8ba4e7329cefb6414eede04f3dd3e3f6be15bd559afe0d518e7`.
+
+The change is contractual: schema 8, envelope v2 with `scope=source`, and the eighth
+migration in source history. It is not caused by derived cache or changed payroll
+values. References use the deterministic certification inputs, identities, plans,
+and `application_revision=global-certification/v1`; they are not universal corpus hashes.
+
+One global v8 certification inside the full suite built A, replayed A, and built B.
+Exact source content/counts and ALTEN IDs matched; strict replay preserved every
+timestamp. Both builds had six corpora, 244 PDFs/items/locations, 233 processed,
+11 skipped, zero failures, 242 physical files, 233 logical documents, 259 versions,
+259 extractions, 259 assessments, 36,470 facts, 35,969 fact-page links, 260 version
+pages, 362 observations/support links and 2 rules. ALTEN remains 52/78/0 unresolved.
+No real manual decisions, relations, derived results or runtime database were added.
+Synthetic tests separately certify nonempty decisions/relations and cache-only
+insertion/modification without changing source revision.
+
+Final checks: 1,054 portable; 1,422 full/private (368 private, no skips); Ruff clean;
+`mypy src` zero errors; `./scripts/check.sh` exit 0 (4 unchanged UI legacy mypy
+baseline diagnostics, zero new/stale). Run `venv/bin/python -B -m pytest -q
+--run-private` for the full suite, or target
+`tests/private/test_canonical_global_reproducibility.py` for the global certificate.
+`check.sh` remains the integral static/portable entrypoint.
+
+Audit range: `9d8a556..36bd527`, plus this certification-only change. Parsers,
+legacy models and DatabaseService are unchanged; no private PDFs, databases or
+bytecode are tracked. Pure canonical contracts have no parser, persistence, legacy
+service or UI imports. The ALTEN binding reuses the legacy script's certificate
+filter without instantiating its DatabaseService. T6.14 corrected 10 test-only
+mypy errors (missing existence assertions/annotations), added boundary/schema
+checks, strengthened cache exclusion and fixed stale documentation. No productive
+contract, fingerprint algorithm, economic rule or schema was changed in T6.14.
+T6 is frozen; T7 has not started.

@@ -82,6 +82,11 @@ def test_cache_has_no_circular_revision(store):
     assert reader.read(include_derived_cache=True).fingerprint != global_before.fingerprint
     assert repo.capture_inputs(result.inputs).dataset_revision == result.dataset_revision
     assert repo.freshness(result.result_id) == 'current'
+    cached = reader.read(include_derived_cache=True)
+    # Synthetic direct SQL mutation tests exclusion, not a supported overwrite API.
+    conn.execute('UPDATE derived_results SET coefficient=2')
+    assert reader.read() == before
+    assert reader.read(include_derived_cache=True) != cached
 
 
 def test_parameters_and_inputs_order_are_deterministic(store):
