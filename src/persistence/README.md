@@ -587,3 +587,58 @@ using the six certified corpora and an explicitly empty real decision set. It
 compares exact logical bytes, all table counts, all inventory classifications and
 ALTEN identities. Replay A also compares strict state, proving timestamps and
 history remain unchanged. It never creates the definitive runtime database.
+
+### Reconstructible derived cache (schema v8)
+
+Migration 0008 adds only `derived_results` and `derived_inputs`. A result references
+an immutable `rules` record (its ID covers family/name/version/implementation hash),
+canonical versioned primitive-map parameters, source dataset revision, output key,
+result type, exact `CanonicalValue`, `ready`/`invalid` status and technical timestamp.
+Values use integer coefficient/scale, never REAL, and preserve currency/uncertainty.
+Parameters reuse canonical serialization and the existing primitive decoder; floats
+are rejected. Input sets are nonempty, typed, unique and canonically ordered.
+
+Identity is the canonical hash of rule ID, parameters, revision, ordered input IDs
+and output key. Output value/type/status are compared as content, not identity:
+a different output for the same calculation raises `ReproducibilityConflict`.
+Repeated publication preserves the first timestamp. No destructive upsert exists.
+
+`derived_inputs` provides real restrictive FK links to either an observation or a
+fact, with exactly one target per row. Observation support continues through the
+existing `observation_facts` links to facts/extraction/version/document/PDF; no full
+provenance copy is stored. Capturing inputs returns values and their IDs together
+with the source revision in one read snapshot. Unknown targets cannot be published.
+This infrastructure does not decide economic eligibility, interpret uncertain
+inputs, or execute formulas. The neutral `synthetic_sum` exists only in tests.
+
+**Dataset revision is the existing logical source fingerprint**, not a counter or
+timestamp. The reader retains the v7 `canonical-persisted-state/v1` representation
+unchanged. For v8 it uses `canonical-persisted-state/v2`, schema 8, `scope=source`,
+with the same 21 source tables and the same explicit operational exclusions. Both
+derived tables are excluded, preventing a result's publication from invalidating
+itself. Schema history (now including migration 8), rules, evidence, interpretations,
+relations and human decisions remain source state. Register the responsible rule
+before capturing the calculation revision. Invalidating on any material source
+change is deliberately conservative, even for unrelated inputs.
+
+`read(include_derived_cache=True)` is a separate `scope=global-with-cache` audit
+fingerprint over all 23 tables; it is **never** the dataset revision. Its logical
+mode additionally excludes `derived_results.created_at`; strict mode includes all
+columns. Prior v7 certification tests explicitly retain their v7 catalog; the
+manual-decision rebuild test follows the current packaged schema.
+
+`DerivedRepository.publish` accepts only ready results. The revision check and
+result/input inserts share one SQLite transaction, including caller rollback.
+A mismatched revision raises `DatasetRevisionConflict` before any cache insertion.
+SQLite prevents upgrading a stale read snapshot to a successful write if another
+connection commits between checking and writing; BUSY/LOCKED publication failures
+are exposed as revision conflicts, never automatically retried without revalidation.
+The caller computes outside this transaction, then submits its captured revision.
+
+`freshness` reports `current`, `stale`, or `invalid`. Staleness is computed against
+the current source fingerprint, not persisted by rewriting results. Invalid
+results can be recorded explicitly with `record_invalid`, but cannot be published.
+They retain uncertainty/candidates for diagnostics and remain non-publishable.
+Stored stale/invalid results are not automatically deleted, updated, selected as
+inputs, or used to replace source evidence. Explicit cache eviction/recalculation
+is demonstrated with synthetic data; no production eviction policy or KPI exists.

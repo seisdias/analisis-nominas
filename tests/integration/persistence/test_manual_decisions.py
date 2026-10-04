@@ -157,7 +157,7 @@ def test_rebuild_new_file_equivalent_and_source_untouched(tmp_path):
     result = rebuild_with_decisions(target, portable, populate)
     assert result.decisions_validated and result.path == target
     with open_database(target) as db:
-        assert verify_schema(db.connection).current_version == 7
+        assert verify_schema(db.connection).current_version == len(load_migrations())
         for table, rows in expected.items():
             assert db.connection.execute(f'SELECT * FROM {table}').fetchall() == rows
         assert DecisionRepository(db.connection).export_decisions() == portable
@@ -192,12 +192,12 @@ def test_schema_v7_upgrade_reopen_integrity(tmp_path, upgrade):
     if upgrade:
         with open_database(path, mode='create', migrations=load_migrations()[:6]):
             pass
-    with open_database(path, mode='migrate' if upgrade else 'create') as db:
-        assert verify_schema(db.connection).current_version == 7
+    with open_database(path, mode='migrate' if upgrade else 'create', migrations=load_migrations()[:7]) as db:
+        assert verify_schema(db.connection, load_migrations()[:7]).current_version == 7
         assert db.connection.execute('PRAGMA integrity_check').fetchall() == [('ok',)]
         assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []
         before = tuple(db.connection.iterdump())
-    with open_database(path, mode='migrate') as db:
+    with open_database(path, mode='migrate', migrations=load_migrations()[:7]) as db:
         assert tuple(db.connection.iterdump()) == before
 
 

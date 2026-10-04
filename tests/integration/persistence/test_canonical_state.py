@@ -10,12 +10,19 @@ from src.canonical.evidence import Corpus, Person, corpus_id, person_id
 from src.canonical.relations import DocumentRelation, ObservationRelation
 from src.canonical_ingestion import CorpusInput, ingest
 from src.manual_decisions import import_decisions
-from src.persistence import load_migrations, open_database
+from src.persistence import load_migrations
+from src.persistence import open_database as packaged_open_database
 from src.persistence.decisions import DecisionRepository
 from src.persistence.state import CanonicalStateReader, StateContractError
 from tests.integration.ingestion.test_canonical_ingestion import SyntheticProcessor
 from tests.integration.persistence.test_manual_decisions import STAMP, populate
 from tests.integration.persistence.test_relations import unit
+
+
+# Preserve the v7 fingerprint contract; v8 coverage lives in test_derived_results.
+def open_database(path, **kwargs):
+    kwargs.setdefault('migrations', load_migrations()[:7])
+    return packaged_open_database(path, **kwargs)
 
 
 @pytest.fixture

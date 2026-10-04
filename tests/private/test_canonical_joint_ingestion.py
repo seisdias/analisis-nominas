@@ -9,8 +9,21 @@ from src.canonical.evidence import Corpus, Person, corpus_id, person_id
 from src.canonical_ingestion import CorpusInput, ingest, inventory
 from src.ingestion_processors import AltenProcessor, OrdinaryProcessor
 from src.parsers.parser_factory import ParserFactory
-from src.persistence import open_database, verify_schema
+from src.persistence import load_migrations
+from src.persistence import open_database as packaged_open_database
+from src.persistence import verify_schema as packaged_verify_schema
 from src.persistence.relations import RelationRepository
+
+
+# This historical certification remains on its original v7 catalog.
+def open_database(path, **kwargs):
+    kwargs.setdefault('migrations', load_migrations()[:7])
+    return packaged_open_database(path, **kwargs)
+
+
+def verify_schema(connection):
+    return packaged_verify_schema(connection, load_migrations()[:7])
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
