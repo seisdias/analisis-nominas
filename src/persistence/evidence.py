@@ -210,6 +210,14 @@ class EvidenceRepository:
     def get_version(self, version_id: str) -> DocumentVersion | None:
         return self._get(DocumentVersion, version_id)
 
+    def get_document_versions(self, document_id: str) -> tuple[DocumentVersion, ...]:
+        """Enumerate every stored version, without selecting or interpreting one."""
+        rows = self._connection.execute(
+            'SELECT version_id, document_id, file_id, segment_key, created_at '
+            'FROM document_versions WHERE document_id=? ORDER BY version_id', (document_id,),
+        ).fetchall()
+        return tuple(DocumentVersion(*row) for row in rows)
+
     def associate_page(self, page: VersionPage) -> WriteOutcome:
         with self.transaction():
             extent = self._connection.execute(
