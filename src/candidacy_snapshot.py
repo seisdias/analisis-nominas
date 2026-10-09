@@ -112,8 +112,10 @@ def _load(repo: RelationRepository, observation_id: str) -> CandidacyRelationalS
                 facts[fact.fact_id] = fact
                 extractions[extraction.extraction_id] = extraction
                 known_pages = {p.page_number for p in version_pages.values() if p.version_id == version.version_id}
-                for fact_page in repo.get_fact_pages(fact.fact_id):
-                    _valid(fact_page.page_number in known_pages)
+                for reference in repo.get_fact_page_references(fact.fact_id):
+                    _valid(reference.version_id == extraction.version_id)
+                    _valid(reference.page_number in known_pages)
+                    fact_page = FactPage(reference.fact_id, reference.page_number)
                     fact_pages[(fact_page.fact_id, fact_page.page_number)] = fact_page
             for evidence in repo.get_observations(assessment.assessment_id):
                 _valid(evidence.observation.assessment_id == assessment.assessment_id)

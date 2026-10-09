@@ -31,7 +31,7 @@ from src.canonical.evidence import (
     person_id,
     source_file_id,
 )
-from src.canonical.facts import DocumentaryFact, FactDraft, FactPage, fact_id
+from src.canonical.facts import DocumentaryFact, FactDraft, FactPage, FactPageReference, fact_id
 from src.persistence import (
     Migration,
     MigrationChecksumError,
@@ -126,6 +126,7 @@ def test_pages_none_one_many_and_no_scope_guessing(store):
     repo.associate_page(VersionPage(version.version_id, 1, 0))
     repo.associate_page(VersionPage(version.version_id, 3, 1))
     assert repo.get_fact_pages(fact.fact_id) == ()
+    assert repo.get_fact_page_references(fact.fact_id) == ()
     first = FactPage(fact.fact_id, 1)
     assert repo.associate_fact_page(first) == WriteOutcome.CREATED
     assert repo.associate_fact_page(first) == WriteOutcome.IDENTICAL
@@ -133,6 +134,10 @@ def test_pages_none_one_many_and_no_scope_guessing(store):
     third = FactPage(fact.fact_id, 3)
     repo.associate_fact_page(third)
     assert repo.get_fact_pages(fact.fact_id) == (first, third)
+    assert repo.get_fact_page_references(fact.fact_id) == (
+        FactPageReference(fact.fact_id, version.version_id, 1),
+        FactPageReference(fact.fact_id, version.version_id, 3),
+    )
     # Page 2 exists physically but was not established in this version's scope.
     with pytest.raises(ValueError):
         repo.associate_fact_page(FactPage(fact.fact_id, 2))

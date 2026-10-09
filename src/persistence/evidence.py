@@ -16,7 +16,7 @@ from src.canonical.evidence import (
     Person,
     SourceFile,
 )
-from src.canonical.facts import DocumentaryFact, FactPage
+from src.canonical.facts import DocumentaryFact, FactPage, FactPageReference
 from src.canonical.identifiers import ReproducibilityConflict
 from src.canonical.values import CanonicalValue, CurrencyCode, ExactDecimal, ValueState
 
@@ -317,6 +317,14 @@ class EvidenceRepository:
             (fact_id,),
         ).fetchall()
         return tuple(FactPage(*row) for row in rows)
+
+    def get_fact_page_references(self, fact_id: str) -> tuple[FactPageReference, ...]:
+        """Read stored version IDs without inferring them from the extraction."""
+        rows = self._connection.execute(
+            'SELECT fact_id, version_id, page_number FROM fact_pages '
+            'WHERE fact_id=? ORDER BY page_number', (fact_id,),
+        ).fetchall()
+        return tuple(FactPageReference(*row) for row in rows)
 
 
 _FACT_COLUMNS = ('fact_id, extraction_id, fact_key, value_state, value_kind, coefficient, '

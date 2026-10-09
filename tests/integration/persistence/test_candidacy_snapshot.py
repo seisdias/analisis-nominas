@@ -4,18 +4,19 @@ from uuid import UUID
 
 import pytest
 
-from src.candidacy_snapshot import CandidacySnapshotError, CandidacySnapshotLoader
+from src.candidacy_snapshot import CandidacySnapshotError, CandidacySnapshotLoader, SnapshotFailure
 from src.canonical.documents import (
     DocumentVersion,
     Extraction,
     LogicalDocument,
+    VersionPage,
     document_id,
     extraction_id,
     version_id,
 )
 from src.canonical.economics import Assessment, EconomicObservation, Rule, observation_id
 from src.canonical.evidence import Corpus, Person, SourceFile, corpus_id, person_id, source_file_id
-from src.canonical.facts import DocumentaryFact, FactDraft
+from src.canonical.facts import DocumentaryFact, FactDraft, FactPage
 from src.canonical.relations import DocumentRelation, ObservationRelation
 from src.canonical.values import CanonicalValue, ExactDecimal, ValueState
 from src.persistence import open_database
@@ -87,6 +88,37 @@ def test_minimal_snapshot_and_read_only(store):
     assert not hasattr(snapshot, 'complete')
     with pytest.raises(FrozenInstanceError):
         setattr(snapshot, 'scope', 'other')
+
+
+@pytest.mark.parametrize('wrong_version', [True, False])
+def test_fact_page_requires_exact_extraction_version(store, wrong_version):
+    path, repo, conn = store
+    doc, obs = unit(repo, 'a')
+    unit(repo, 'b', doc=doc)
+    evidence = repo.get_observation(obs.observation_id)
+    fact = repo.get_fact(evidence.fact_ids[0])
+    extraction = repo.get_extraction(fact.extraction_id)
+    versions = repo.get_document_versions(doc.document_id)
+    for version in versions:
+        repo.associate_page(VersionPage(version.version_id, 1, 0))
+    page = FactPage(fact.fact_id, 1)
+    repo.associate_fact_page(page)
+    if wrong_version:
+        other = next(v for v in versions if v.version_id != extraction.version_id)
+        conn.execute('UPDATE fact_pages SET version_id=? WHERE fact_id=?',
+                     (other.version_id, fact.fact_id))
+    # The wrong version still satisfies SQL foreign keys and has page 1.
+    assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+    before = path.read_bytes()
+    if wrong_version:
+        with pytest.raises(CandidacySnapshotError) as error:
+            CandidacySnapshotLoader(path).load_candidacy_snapshot(obs.observation_id)
+        assert error.value.reason == SnapshotFailure.INVALID_REFERENCE
+    else:
+        snapshot = CandidacySnapshotLoader(path).load_candidacy_snapshot(obs.observation_id)
+        assert snapshot.fact_pages == (page,)
+        assert len(snapshot.version_pages) == 2
+    assert path.read_bytes() == before
 
 
 @pytest.mark.parametrize('kind', ['contained_in', 'adjusts', 'replaces', 'complements'])
