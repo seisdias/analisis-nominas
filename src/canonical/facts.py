@@ -55,3 +55,16 @@ class FactPage:
         _id(self.fact_id, 'fact')
         if type(self.page_number) is not int or not 0 < self.page_number < 2**63:
             raise ValueError('Positive signed-64-compatible physical page required')
+
+
+@dataclass(frozen=True, slots=True)
+class FactPageReference:
+    """Complete persisted page reference, including its physical version scope."""
+
+    fact_id: str
+    version_id: str
+    page_number: int
+
+    def __post_init__(self) -> None:
+        FactPage(self.fact_id, self.page_number)
+        _id(self.version_id, 'version')
