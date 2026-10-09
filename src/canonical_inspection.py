@@ -1,5 +1,7 @@
 """Read-only developer queries. No selection, economic policy or write API."""
+import re
 import sqlite3
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import fields
@@ -11,6 +13,7 @@ from src.canonical.certification import (
     DocumentarySupport,
     certify_observation,
 )
+from src.canonical.values import ExactDecimal
 from src.persistence import CanonicalSQLiteError, connect, verify_schema
 from src.persistence.economics import EconomicRepository
 
@@ -43,6 +46,203 @@ class CanonicalInspector:
             groups[f'{table}.{column}'] = dict(self._connection.execute(
                 f'SELECT {column},count(*) FROM {table} GROUP BY {column} ORDER BY {column}'))
         return {'counts': counts, 'states': groups}
+
+    def _documentary_context(self, document_id: str) -> dict[str, Any]:
+        """Require agreement across every version/extraction, never select one."""
+        names = ('empresa', 'cif', 'anio', 'mes')
+        values: dict[str, set[str | int]] = {name: set() for name in names}
+        issues: dict[str, set[str]] = {name: set() for name in names}
+        versions = self._repo.get_document_versions(document_id)
+        if not versions:
+            for name in names:
+                issues[name].add('missing_version')
+        for version in versions:
+            extraction_ids = [row[0] for row in self._connection.execute(
+                'SELECT extraction_id FROM extractions WHERE version_id=? ORDER BY extraction_id',
+                (version.version_id,))]
+            if not extraction_ids:
+                for name in names:
+                    issues[name].add('missing_extraction')
+            for identity in extraction_ids:
+                facts = self._repo.get_extraction_facts(identity)
+                for name in names:
+                    matches = [f for f in facts if f.fact_key in ('nomina.' + name, 'payload/' + name)]
+                    if not matches:
+                        issues[name].add('missing_fact')
+                    for fact in matches:
+                        value = fact.value
+                        if value.state != 'present':
+                            issues[name].add('non_present.' + value.state)
+                            continue
+                        raw = value.value
+                        if name in ('empresa', 'cif'):
+                            if not isinstance(raw, str) or not raw.strip():
+                                issues[name].add('invalid_value')
+                            else:
+                                values[name].add(raw)  # Exact text, no normalization.
+                        elif isinstance(raw, ExactDecimal):
+                            number = raw.to_decimal()
+                            upper = 12 if name == 'mes' else 9999
+                            if number != number.to_integral_value() or not 1 <= number <= upper:
+                                issues[name].add('invalid_value')
+                            else:
+                                values[name].add(int(number))
+                        else:
+                            issues[name].add('invalid_value')
+        for name in names:
+            if len(values[name]) > 1:
+                issues[name].add('conflicting_values')
+        known = {name: not issues[name] and len(values[name]) == 1 for name in names}
+        return {
+            'company_text': next(iter(values['empresa'])) if known['empresa'] else None,
+            'period': (next(iter(values['anio'])), next(iter(values['mes'])))
+                      if known['anio'] and known['mes'] else None,
+            'fields': {
+                'company': (known['empresa'], tuple(sorted(issues['empresa']))),
+                'cif': (known['cif'], tuple(sorted(issues['cif']))),
+                'year_month': (known['anio'] and known['mes'],
+                               tuple(sorted(issues['anio'] | issues['mes']))),
+            },
+        }
+
+    def coverage(self) -> dict[str, Any]:
+        """Structural coverage in this read snapshot, never economic inclusion."""
+        rows = self._connection.execute(
+            'SELECT d.document_id,d.employer_id,e.display_name FROM logical_documents d '
+            'LEFT JOIN employers e ON e.employer_id=d.employer_id ORDER BY d.document_id').fetchall()
+        documentary = {row[0]: self._documentary_context(row[0]) for row in rows}
+        observations = []
+        for (identity,) in self._connection.execute(
+                'SELECT observation_id FROM economic_observations ORDER BY observation_id'):
+            observations.append(self.explain(identity, CertificationRequirements()))
+        versions = Counter(row[0] for row in self._connection.execute(
+            'SELECT document_id FROM document_versions'))
+        assessments = list(self._connection.execute('SELECT document_id,status FROM assessments'))
+        relations = list(self._connection.execute(
+            'SELECT source_document_id,target_document_id,relation_type FROM document_relations'))
+        observation_relations = list(self._connection.execute(
+            'SELECT source_observation_id,target_observation_id,relation_type FROM observation_relations'))
+
+        total_facts = list(self._connection.execute(
+            'SELECT v.document_id,f.fact_key,f.value_state FROM documentary_facts f '
+            'JOIN extractions e ON e.extraction_id=f.extraction_id '
+            'JOIN document_versions v ON v.version_id=e.version_id '
+            "WHERE f.fact_key IN ('nomina.total_devengado','nomina.liquido_percibir')"))
+        concept_rows = list(self._connection.execute(
+            'SELECT v.document_id,f.extraction_id,f.fact_key,f.value_state '
+            'FROM documentary_facts f JOIN extractions e ON e.extraction_id=f.extraction_id '
+            'JOIN document_versions v ON v.version_id=e.version_id '
+            "WHERE f.fact_key LIKE 'nomina.conceptos.%' ORDER BY f.fact_id"))
+
+        def counts(ids: set[str]) -> dict[str, Any]:
+            selected = [o for o in observations if o['document'].document_id in ids]
+            obs_ids = {o['observation'].observation_id for o in selected}
+            periods = {(o['document'].corpus_id, o['document'].employer_id,
+                        o['observation'].liquidation_period.value) for o in selected
+                       if o['observation'].liquidation_period.state == 'present'}
+            known_docs = {o['document'].document_id for o in selected
+                          if o['observation'].liquidation_period.state == 'present'}
+            concepts = set()
+            concept_docs = set()
+            amount_states: Counter[str] = Counter()
+            for doc, extraction, key, state in concept_rows:
+                match = re.fullmatch(r'nomina\.conceptos\.([0-9a-f]{64})\.([0-9]+)\.([a-z_]+)', key)
+                if doc in ids and match:
+                    concepts.add((extraction, match[1], match[2]))
+                    concept_docs.add(doc)
+                    if match[3] == 'importe':
+                        amount_states[state] += 1
+            documentary_counts = {}
+            for field in ('company', 'cif', 'year_month'):
+                documentary_counts[field] = {
+                    'known_documents': sum(documentary[i]['fields'][field][0] for i in ids),
+                    'unavailable_documents': sum(not documentary[i]['fields'][field][0] for i in ids),
+                    'diagnostics': dict(sorted(Counter(
+                        reason for i in ids for reason in documentary[i]['fields'][field][1]).items())),
+                }
+            result: dict[str, Any] = {
+                'documentary_context': documentary_counts,
+                'documentary_concept_occurrences_per_extraction': len(concepts),
+                'documents_with_concept_fields': len(concept_docs),
+                'concept_amount_states': dict(sorted(amount_states.items())),
+                'documents': len(ids), 'versions': sum(versions[i] for i in ids),
+                'documents_with_multiple_versions': sum(versions[i] > 1 for i in ids),
+                'observations': len(selected),
+                'known_liquidation_periods': len(periods),
+                'documents_without_known_liquidation_period': len(ids - known_docs),
+                'eligibility': dict(sorted(Counter(o['observation'].eligibility for o in selected).items())),
+                'assessment_states': dict(sorted(Counter(status for doc, status in assessments
+                                                         if doc in ids).items())),
+                'registered_document_relations': dict(sorted(Counter(
+                    kind for a, b, kind in relations if a in ids or b in ids).items())),
+                'registered_observation_relations': dict(sorted(Counter(
+                    kind for a, b, kind in observation_relations if a in obs_ids or b in obs_ids).items())),
+            }
+            for magnitude in ('documentary_gross', 'documentary_net'):
+                matching = [o for o in selected if o['observation'].magnitude == magnitude]
+                certified = [o for o in matching if o['certification']['status'] == 'certified']
+                covered = {o['document'].document_id for o in certified}
+                observed = {o['document'].document_id for o in matching}
+                reasons: Counter[str] = Counter()
+                for o in matching:
+                    cert = o['certification']
+                    reasons.update(cert.get('reasons', ()))
+                    if cert['status'] == 'NOT_EVALUATED':
+                        reasons.update(['inspection.multiple_or_missing_extractions'])
+                fact_key = ('nomina.total_devengado' if magnitude == 'documentary_gross'
+                            else 'nomina.liquido_percibir')
+                result[magnitude] = {
+                    'documentary_fact_states_all_extractions': dict(sorted(Counter(
+                        state for doc, key, state in total_facts if doc in ids and key == fact_key).items())),
+                    'observations': len(matching), 'certified_observations': len(certified),
+                    'certified_documents': len(covered),
+                    'documents_without_observation': len(ids - observed),
+                    'documents_without_certified_value': len(ids - covered),
+                    'documents_with_multiple_observations': sum(
+                        n > 1 for n in Counter(o['document'].document_id for o in matching).values()),
+                    'value_states': dict(sorted(Counter(o['observation'].value.state
+                                                        for o in matching).items())),
+                    'certification_blockers_by_observation': dict(sorted(reasons.items())),
+                }
+            return result
+
+        employers = sorted({row[1] for row in rows if row[1] is not None})
+        if any(row[1] is None for row in rows):
+            employers.append(None)
+        companies = [{'employer_id': employer,
+                      'company': next(row[2] for row in rows if row[1] == employer)
+                                 if employer is not None else 'NO DISPONIBLE: empleador desconocido',
+                      **counts({row[0] for row in rows if row[1] == employer})}
+                     for employer in employers]
+        textual_names = sorted({d['company_text'] for d in documentary.values()
+                                if d['company_text'] is not None})
+        if any(d['company_text'] is None for d in documentary.values()):
+            textual_names.append(None)
+        documentary_companies = []
+        for name in textual_names:
+            ids = {i for i, d in documentary.items() if d['company_text'] == name}
+            documentary_companies.append({
+                'company_text': name,
+                'assignment': 'documentary_exact_text' if name is not None else 'NO DISPONIBLE: ambiguo o incompleto',
+                'distinct_documentary_year_months': len({documentary[i]['period'] for i in ids
+                                                         if documentary[i]['period'] is not None})
+                                                     if name is not None else 'NO DISPONIBLE',
+                **counts(ids),
+            })
+        return {
+            'documentary_companies': documentary_companies,
+            'documentary_definition': 'Texto exacto, sin identidad empresarial inferida. Año/mes documental '
+                                      'no equivale a liquidación ni devengo. Se exige concordancia PRESENT '
+                                      'en todas las versiones/extracciones. CIF: sólo cobertura, nunca valores.',
+            'contract': 'canonical-coverage/v1', 'companies': companies,
+            'total': counts({row[0] for row in rows}),
+            'period_definition': 'Mes de liquidación PRESENT en observaciones; distintos por corpus/empleador/mes. '
+                                 'No mide meses trabajados ni periodos documentales sin observación.',
+            'concept_usability': 'NO DISPONIBLE: no hay certificación de utilidad económica de conceptos.',
+            'notice': 'certified != candidate != additive; sin selección ni resolución. '
+                      'Sin observación no significa ausencia documental. Conteos de versiones no se deduplican. '
+                      'Relaciones registradas son contexto, no exclusiones. Requisitos contextuales NOT_EVALUATED.',
+        }
 
     def _ids(self, table: str, identity: str, filters: dict[str, str | None], limit: int) -> list[str]:
         # Table/column names come only from the fixed call sites below, never user SQL.
