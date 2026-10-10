@@ -127,12 +127,14 @@ class CanonicalInspector:
             'SELECT v.document_id,f.fact_key,f.value_state FROM documentary_facts f '
             'JOIN extractions e ON e.extraction_id=f.extraction_id '
             'JOIN document_versions v ON v.version_id=e.version_id '
-            "WHERE f.fact_key IN ('nomina.total_devengado','nomina.liquido_percibir')"))
+            "WHERE f.fact_key IN ('nomina.total_devengado','nomina.liquido_percibir',"
+            "'payload/total_devengado','payload/liquido_percibir')"))
         concept_rows = list(self._connection.execute(
             'SELECT v.document_id,f.extraction_id,f.fact_key,f.value_state '
             'FROM documentary_facts f JOIN extractions e ON e.extraction_id=f.extraction_id '
             'JOIN document_versions v ON v.version_id=e.version_id '
-            "WHERE f.fact_key LIKE 'nomina.conceptos.%' ORDER BY f.fact_id"))
+            "WHERE f.fact_key LIKE 'nomina.conceptos.%' "
+            "OR f.fact_key LIKE 'payload/conceptos/%' ORDER BY f.fact_id"))
 
         def counts(ids: set[str]) -> dict[str, Any]:
             selected = [o for o in observations if o['document'].document_id in ids]
@@ -151,6 +153,14 @@ class CanonicalInspector:
                     concepts.add((extraction, match[1], match[2]))
                     concept_docs.add(doc)
                     if match[3] == 'importe':
+                        amount_states[state] += 1
+                # ALTEN keeps list positions, not the ordinary adapter's group/occurrence IDs.
+                # Count each stored occurrence in its extraction; never merge versions.
+                payload_match = re.fullmatch(r'payload/conceptos/(0|[1-9][0-9]*)/([a-z_]+)', key)
+                if doc in ids and payload_match:
+                    concepts.add((extraction, 'payload', payload_match[1]))
+                    concept_docs.add(doc)
+                    if payload_match[2] == 'importe':
                         amount_states[state] += 1
             documentary_counts = {}
             for field in ('company', 'cif', 'year_month'):
@@ -189,11 +199,11 @@ class CanonicalInspector:
                     reasons.update(cert.get('reasons', ()))
                     if cert['status'] == 'NOT_EVALUATED':
                         reasons.update(['inspection.multiple_or_missing_extractions'])
-                fact_key = ('nomina.total_devengado' if magnitude == 'documentary_gross'
-                            else 'nomina.liquido_percibir')
+                field = 'total_devengado' if magnitude == 'documentary_gross' else 'liquido_percibir'
+                fact_keys = ('nomina.' + field, 'payload/' + field)
                 result[magnitude] = {
                     'documentary_fact_states_all_extractions': dict(sorted(Counter(
-                        state for doc, key, state in total_facts if doc in ids and key == fact_key).items())),
+                        state for doc, key, state in total_facts if doc in ids and key in fact_keys).items())),
                     'observations': len(matching), 'certified_observations': len(certified),
                     'certified_documents': len(covered),
                     'documents_without_observation': len(ids - observed),

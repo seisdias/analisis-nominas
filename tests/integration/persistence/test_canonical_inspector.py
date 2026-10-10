@@ -443,3 +443,66 @@ def test_documentary_coverage_version_without_extraction(dataset):
     assert field['known_documents'] == 0
     assert field['diagnostics'] == {'missing_extraction': 1, 'missing_fact': 1}
     assert report['documentary_companies'][0]['company_text'] is None
+
+
+@pytest.mark.parametrize('format_name', ['ordinary', 'alten'])
+def test_coverage_documentary_formats_preserve_extraction_counts(dataset, format_name):
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        source = repo.get_extraction(dataset[4][0].extraction_id)
+        assert source is not None
+        original = repo.get_version(source.version_id)
+        assert original is not None
+        doc = replace(dataset[1], origin_key='documentary-only',
+                      document_id=document_id(dataset[1].corpus_id, 'documentary-only'))
+        repo.register_document(doc)
+        prefix = 'nomina.' if format_name == 'ordinary' else 'payload/'
+        for index in range(2):
+            segment = f'evidence-{index}'
+            version = DocumentVersion(version_id(doc.document_id, original.file_id, segment),
+                                      doc.document_id, original.file_id, segment)
+            repo.register_version(version)
+            ext = replace(source, version_id=version.version_id,
+                          extraction_id=extraction_id(version.version_id, 'synthetic', '1', 'b'*64))
+            repo.register_extraction(ext)
+            drafts = [
+                FactDraft(prefix + 'total_devengado', CanonicalValue(
+                    state=ValueState.PRESENT, value=ExactDecimal(1, 0))),
+                FactDraft(prefix + 'liquido_percibir', CanonicalValue(state=ValueState.UNKNOWN)),
+            ]
+            for occurrence in range(3):
+                concept = (f'nomina.conceptos.{"d"*64}.{occurrence}.' if format_name == 'ordinary'
+                           else f'payload/conceptos/{occurrence}/')
+                drafts.extend(FactDraft(concept + field, CanonicalValue(
+                    state=ValueState.PRESENT, value='synthetic'))
+                    for field in ('codigo', 'concepto', 'categoria'))
+                if occurrence != 1:  # Missing amount is not unknown or zero.
+                    drafts.append(FactDraft(concept + 'importe', CanonicalValue(
+                        state=ValueState.UNKNOWN if occurrence == 0 else ValueState.NOT_PRESENT)))
+            # Similar prefixes are not verified concept/total paths.
+            drafts.append(FactDraft(prefix + 'total_devengado_extra',
+                                    CanonicalValue(state=ValueState.UNKNOWN)))
+            drafts.append(FactDraft('payload/conceptos/not-an-index/importe',
+                                    CanonicalValue(state=ValueState.UNKNOWN)))
+            for draft in drafts:
+                fact = DocumentaryFact.from_draft(ext.extraction_id, draft)
+                assert repo.register_fact(fact) == 'created'
+                assert repo.register_fact(fact) == 'identical'
+        conn.commit()
+    before = dataset[0].read_bytes()
+    with open_inspector(dataset[0]) as inspector:
+        report = inspector.coverage()
+    total = report['total']
+    assert total['documents'] == 2
+    assert total['versions'] == 3
+    assert total['documentary_concept_occurrences_per_extraction'] == 6
+    assert total['documents_with_concept_fields'] == 1
+    assert total['concept_amount_states'] == {'not_present': 2, 'unknown': 2}
+    assert total['documentary_gross']['documentary_fact_states_all_extractions'] == {'present': 3}
+    assert total['documentary_net']['documentary_fact_states_all_extractions'] == {'present': 1, 'unknown': 2}
+    assert total['observations'] == 3  # The documentary-only versions generate none.
+    assert total['documentary_gross']['certified_documents'] == 1
+    assert total['eligibility'] == {'evidence_only': 3}
+    assert dataset[0].read_bytes() == before
