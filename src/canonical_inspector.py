@@ -53,6 +53,13 @@ def cli(ctx: click.Context, db: Path) -> None:
 
 @cli.command()
 @click.pass_obj
+def coverage(db: Path) -> None:
+    """Cobertura documental por empresa; conteos, sin sumas económicas ni selección."""
+    _run(db, 'coverage')
+
+
+@cli.command()
+@click.pass_obj
 def summary(db: Path) -> None:
     """Structural counts and stored states (not economic KPIs)."""
     _run(db, 'summary')
