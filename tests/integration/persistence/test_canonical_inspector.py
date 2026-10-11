@@ -71,7 +71,7 @@ def invoke(dataset, *args):
 def test_help_needs_no_database():
     result = CliRunner().invoke(cli, ['--help'])
     assert result.exit_code == 0
-    for command in ('summary', 'observations', 'explain', 'facts', 'document'):
+    for command in ('companies', 'summary', 'observations', 'explain', 'facts', 'document'):
         assert command in result.output
 
 
@@ -186,7 +186,7 @@ def test_read_only_all_commands_and_determinism(dataset, monkeypatch):
     monkeypatch.setattr(module, 'connect', guarded)
     before = dataset[0].read_bytes()
     files = set(dataset[0].parent.iterdir())
-    for args in [('coverage',), ('summary',), ('observations',), ('facts',),
+    for args in [('companies',), ('coverage',), ('summary',), ('observations',), ('facts',),
                  ('document', dataset[1].document_id), ('explain', dataset[2].observation_id)]:
         first, second = invoke(dataset, *args), invoke(dataset, *args)
         assert first.exit_code == second.exit_code == 0, first.output
@@ -506,3 +506,98 @@ def test_coverage_documentary_formats_preserve_extraction_counts(dataset, format
     assert total['documentary_gross']['certified_documents'] == 1
     assert total['eligibility'] == {'evidence_only': 3}
     assert dataset[0].read_bytes() == before
+
+
+@pytest.mark.parametrize('prefix', ['nomina.', 'payload/'])
+@pytest.mark.parametrize('names', [('Empresa exacta',), ('Empresa exacta', 'Empresa exacta'),
+                                  ('Empresa exacta', 'Otra empresa'), ('Empresa exacta', None)])
+def test_companies_documentary_versions(dataset, prefix, names):
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        source = repo.get_extraction(dataset[4][0].extraction_id)
+        assert source is not None
+        original = repo.get_version(source.version_id)
+        assert original is not None
+        for index, name in enumerate(names):
+            ext = source
+            if index:
+                version = replace(original, segment_key=str(index), version_id=version_id(
+                    original.document_id, original.file_id, str(index)))
+                repo.register_version(version)
+                ext = replace(source, version_id=version.version_id, extraction_id=extraction_id(
+                    version.version_id, 'synthetic', '1', 'b'*64))
+                repo.register_extraction(ext)
+            if name is not None:
+                repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                    prefix + 'empresa', CanonicalValue(state=ValueState.PRESENT, value=name))))
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                prefix + 'cif', CanonicalValue(state=ValueState.PRESENT, value='SECRET_TAX_ID'))))
+    with open_inspector(dataset[0]) as inspector:
+        report = inspector.companies()
+    coherent = len(set(names)) == 1
+    assert report['companies'] == ([{'company_text': 'Empresa exacta', 'documents': 1}]
+                                    if coherent else [])
+    assert len(report['unassigned_documents']) == int(not coherent)
+    if not coherent:
+        assert report['unassigned_documents'] == [{
+            'document_id': dataset[1].document_id,
+            'company_texts': tuple(sorted(n for n in names if n is not None)),
+            'diagnostics': ('missing_fact',) if None in names else ('conflicting_values',),
+        }]
+    result = invoke(dataset, 'companies')
+    assert result.exit_code == 0, result.output
+    assert 'Empresa exacta' in result.output
+    for private in ('SECRET_TAX_ID', 'cif', '201.53', 'employer_id', 'documentary_gross'):
+        assert private not in result.output
+
+
+def test_companies_empty_database(tmp_path):
+    from src.canonical_inspection import open_inspector
+    path = tmp_path / 'empty.sqlite'
+    with open_database(path, mode='create'):
+        pass
+    with open_inspector(path) as inspector:
+        assert inspector.companies() == {'companies': [], 'unassigned_documents': []}
+    result = CliRunner().invoke(cli, ['--db', str(path), 'companies'])
+    assert result.exit_code == 0, result.output
+    assert '(none)' in result.output
+
+
+def test_companies_exact_grouping_and_order(dataset):
+    from src.canonical.evidence import Employer, employer_id
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        employer = Employer(employer_id('ES', 'SYNTHETIC'), 'ES', 'SYNTHETIC', 'Canonical name')
+        repo.register_employer(employer)
+        source = repo.get_extraction(dataset[4][0].extraction_id)
+        assert source is not None
+        original = repo.get_version(source.version_id)
+        assert original is not None
+        for index, name in enumerate(('Zeta', ' Alfa ', 'Alfa', 'Alfa')):
+            key = f'company-{index}'
+            doc = replace(dataset[1], origin_key=key,
+                          document_id=document_id(dataset[1].corpus_id, key),
+                          employer_id=employer.employer_id if index != 3 else None)
+            repo.register_document(doc)
+            version = replace(original, document_id=doc.document_id,
+                              version_id=version_id(doc.document_id, original.file_id, 'whole'))
+            repo.register_version(version)
+            ext = replace(source, version_id=version.version_id, extraction_id=extraction_id(
+                version.version_id, 'synthetic', '1', 'b'*64))
+            repo.register_extraction(ext)
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                'nomina.empresa', CanonicalValue(state=ValueState.PRESENT, value=name))))
+    with open_inspector(dataset[0]) as inspector:
+        report = inspector.companies()
+    assert report['companies'] == [
+        {'company_text': ' Alfa ', 'documents': 1},
+        {'company_text': 'Alfa', 'documents': 2},
+        {'company_text': 'Zeta', 'documents': 1},
+    ]
+    assert report['unassigned_documents'] == [{
+        'document_id': dataset[1].document_id, 'company_texts': (), 'diagnostics': ('missing_fact',),
+    }]

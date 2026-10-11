@@ -95,6 +95,7 @@ class CanonicalInspector:
         known = {name: not issues[name] and len(values[name]) == 1 for name in names}
         return {
             'company_text': next(iter(values['empresa'])) if known['empresa'] else None,
+            'company_texts': tuple(sorted(values['empresa'])),
             'period': (next(iter(values['anio'])), next(iter(values['mes'])))
                       if known['anio'] and known['mes'] else None,
             'fields': {
@@ -103,6 +104,32 @@ class CanonicalInspector:
                 'year_month': (known['anio'] and known['mes'],
                                tuple(sorted(issues['anio'] | issues['mes']))),
             },
+        }
+
+    def companies(self) -> dict[str, Any]:
+        """Count logical documents by exact agreed documentary name, never employer ID.
+
+        Every version/extraction must agree. Incomplete or conflicting documents
+        remain unassigned, with the observed names and diagnostics for inspection.
+        """
+        counts: Counter[str] = Counter()
+        unassigned = []
+        for (identity,) in self._connection.execute(
+                'SELECT document_id FROM logical_documents ORDER BY document_id'):
+            context = self._documentary_context(identity)
+            name = context['company_text']
+            if name is not None:
+                counts[name] += 1
+            else:
+                unassigned.append({
+                    'document_id': identity,
+                    'company_texts': context['company_texts'],
+                    'diagnostics': context['fields']['company'][1],
+                })
+        return {
+            'companies': [{'company_text': name, 'documents': count}
+                          for name, count in sorted(counts.items())],
+            'unassigned_documents': unassigned,
         }
 
     def coverage(self) -> dict[str, Any]:

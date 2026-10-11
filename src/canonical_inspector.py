@@ -53,6 +53,17 @@ def cli(ctx: click.Context, db: Path) -> None:
 
 @cli.command()
 @click.pass_obj
+def companies(db: Path) -> None:
+    """Empresas por texto documental exacto y documentos lógicos, sin CIF ni salarios.
+
+    Exige concordancia entre versiones/extracciones; discrepancias o ausencias
+    quedan sin asignar. No identifica empresas mediante employer_id.
+    """
+    _run(db, 'companies')
+
+
+@cli.command()
+@click.pass_obj
 def coverage(db: Path) -> None:
     """Cobertura documental por empresa; conteos, sin sumas económicas ni selección."""
     _run(db, 'coverage')
