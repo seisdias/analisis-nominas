@@ -70,6 +70,23 @@ def coverage(db: Path) -> None:
 
 
 @cli.command()
+@click.option('--company', help='Denominación documental exacta, sin normalización.')
+@click.option('--year', type=click.IntRange(1, 9999), help='Año documental.')
+@click.option('--month', type=click.IntRange(1, 12), help='Mes documental (1–12).')
+@click.pass_obj
+def documents(db: Path, company: str | None, year: int | None, month: int | None) -> None:
+    """Documentos lógicos por ID; sin sumas, CIF ni rutas privadas.
+
+    Los filtros exigen concordancia del campo entre versiones/extracciones.
+    Sin filtros se incluyen ausencias y discrepancias con valor null y diagnóstico.
+    Bruto/neto: certified permite importe; no_observation, not_certified o ambiguous
+    no lo permiten. Varias observaciones son ambiguas incluso si coinciden.
+    Certificación documental no implica uso económico ni aditividad.
+    """
+    _run(db, 'documents', company=company, year=year, month=month)
+
+
+@cli.command()
 @click.pass_obj
 def summary(db: Path) -> None:
     """Structural counts and stored states (not economic KPIs)."""
