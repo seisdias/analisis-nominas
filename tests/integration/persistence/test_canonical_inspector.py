@@ -17,7 +17,7 @@ from src.canonical.documents import (
 )
 from src.canonical.evidence import Corpus, Person, SourceFile, corpus_id, person_id, source_file_id
 from src.canonical.facts import DocumentaryFact, FactDraft
-from src.canonical.values import CanonicalValue, ExactDecimal, ValueState
+from src.canonical.values import CanonicalValue, CurrencyCode, ExactDecimal, ValueState
 from src.canonical_inspector import cli
 from src.economic_mapping import evaluate_direct_totals
 from src.persistence import open_database
@@ -25,7 +25,7 @@ from src.persistence.economics import EconomicRepository
 
 
 @pytest.fixture
-def dataset(tmp_path):
+def dataset(tmp_path, request):
     path = tmp_path / 'canonical.sqlite'
     with open_database(path, mode='create') as db:
         repo = EconomicRepository(db.connection)
@@ -45,7 +45,8 @@ def dataset(tmp_path):
         repo.register_version(ver)
         repo.register_extraction(ext)
         facts = tuple(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(key,
-            CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(20153, 2))))
+            CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(20153, 2),
+                           currency=getattr(request, 'param', None))))
             for key in ('nomina.total_devengado', 'nomina.liquido_percibir'))
         for fact in facts:
             repo.register_fact(fact)
@@ -1012,8 +1013,8 @@ def test_documents_csv_zero_currency_and_certification_guard(dataset, tmp_path, 
     def query(self, **filters):
         assert filters == {'company': 'Exact', 'year': 2024, 'month': 3}
         return [{'document_id': 'synthetic', 'company_text': 'Exact', 'year': 2024, 'month': 3,
-                 'gross': {'status': 'certified', 'amount': ExactDecimal(0, 2), 'currency': 'EUR'},
-                 'net': {'status': 'not_certified', 'amount': ExactDecimal(999, 0), 'currency': 'EUR'}}]
+                 'gross': {'status': 'certified', 'amount': ExactDecimal(0, 2), 'currency': CurrencyCode('EUR')},
+                 'net': {'status': 'not_certified', 'amount': ExactDecimal(999, 0), 'currency': CurrencyCode('EUR')}}]
     monkeypatch.setattr(CanonicalInspector, 'documents', query)
     target = tmp_path / 'zero.csv'
     result = invoke(dataset, 'documents', '--company', 'Exact', '--year', '2024', '--month', '3',
@@ -1042,3 +1043,27 @@ def test_documents_csv_query_failure_preserves_destination(tmp_path):
     assert 'Error:' in result.output
     assert target.read_bytes() == b'previous export'
     assert set(tmp_path.iterdir()) == {target}
+
+
+@pytest.mark.parametrize('dataset,expected_currency', [(CurrencyCode('EUR'), 'EUR'), (None, '')],
+                         indirect=['dataset'])
+def test_documents_csv_real_currency(dataset, tmp_path, expected_currency):
+    from src.canonical_inspection import open_inspector
+    with open_inspector(dataset[0]) as inspector:
+        before = inspector.documents()
+    for field in ('gross', 'net'):
+        currency = before[0][field]['currency']
+        assert currency == (CurrencyCode('EUR') if expected_currency else None)
+        if expected_currency:
+            assert isinstance(currency, CurrencyCode)
+    target = tmp_path / 'currency.csv'
+    database_bytes = dataset[0].read_bytes()
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    row, = _read_document_csv(target)
+    assert row == dict(zip(CSV_COLUMNS, [dataset[1].document_id, '', '', '',
+        'certified', '201.53', expected_currency, 'certified', '201.53', expected_currency], strict=True))
+    assert 'CurrencyCode' not in target.read_text(encoding='utf-8-sig')
+    with open_inspector(dataset[0]) as inspector:
+        assert inspector.documents() == before
+    assert dataset[0].read_bytes() == database_bytes

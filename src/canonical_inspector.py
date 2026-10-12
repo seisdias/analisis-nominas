@@ -70,7 +70,8 @@ def _export_documents(db: Path, destination: Path, rows: list[dict[str, Any]]) -
                     certified = value['status'] == 'certified'
                     amount = value.get('amount') if certified else None
                     record[field + '_amount'] = f'{amount.to_decimal():f}' if amount is not None else None
-                    record[field + '_currency'] = value.get('currency') if certified else None
+                    currency = value.get('currency') if certified else None
+                    record[field + '_currency'] = currency.code if currency is not None else None
                 writer.writerow(record)
             handle.flush()
             os.fsync(handle.fileno())
