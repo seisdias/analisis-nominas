@@ -7,8 +7,8 @@ certificados y congelados. No incluye OCR.
 La infraestructura canónica T6 está certificada y congelada: usa una única SQLite, esquema v8, SQL explícito y
 migraciones 0001–0008. Separa evidencia, interpretación, decisiones humanas y caché
 derivada reconstruible. ALTEN sigue `UNRESOLVED`, sin candidatas económicas.
-La UI y los comandos históricos siguientes usan la persistencia legacy; no crean
-la BD canónica definitiva. Véase el [contrato canónico](src/persistence/README.md)
+La interfaz consulta la base canónica en solo lectura. Los comandos históricos de
+ingesta usan la persistencia legacy; no crean la BD canónica definitiva. Véase el [contrato canónico](src/persistence/README.md)
 para reconstrucción, revisiones y certificación. No hay KPIs salariales nuevos.
 
 ## Instalación (Python 3.14.0)
@@ -17,14 +17,41 @@ para reconstrucción, revisiones y certificación. No hay KPIs salariales nuevos
 python3.14 -m venv venv
 source venv/bin/activate
 python -m pip install -r requirements-dev.txt
-python -m scripts.init_db
-streamlit run app.py
+ANALISIS_NOMINAS_CANONICAL_DB=/ruta/absoluta/canonica.sqlite \
+  streamlit run app.py --server.address 127.0.0.1
 ```
 
-La inicialización crea únicamente el esquema, sin datos. La base predeterminada
+La interfaz requiere una base canónica existente (esquema v8, journal DELETE),
+preparada mediante el [constructor canónico](examples/canonical-build.md). Abre
+[http://localhost:8501](http://localhost:8501). No crea ni migra bases. La ruta se indica exclusivamente
+mediante `ANALISIS_NOMINAS_CANONICAL_DB`; no se usa la base legacy como alternativa.
+
+La pantalla permite seleccionar empresa documental exacta, año y mes. «Todas las empresas» incluye documentos con empresa
+ausente o ambigua. Bruto y neto conservan su certificación independiente: los
+importes no certificados, sin observación o ambiguos no muestran un candidato.
+La aplicación trabaja exclusivamente en EUR por decisión del propietario. La
+interfaz presenta los valores certificados en formato español y con símbolo €
+también cuando la moneda canónica es `None`, sin modificar la evidencia documental.
+Una divisa explícita distinta de EUR muestra una inconsistencia, sin conversión ni
+etiquetado en euros. Se conservan los decimales exactos (mínimo dos). No hay sumas, KPIs, gráficos, ingesta ni borrado desde esta pantalla.
+La navegación lateral abre el Explorador. Los filtros se aplican automáticamente
+al cambiar su valor (el año al confirmar o salir del campo), sin botón de actualización.
+Dos contadores muestran documentos lógicos únicos y documentos con bruto y neto
+certificados en los resultados filtrados; no son indicadores salariales. La tabla
+muestra periodo, empresa, bruto y neto, con importes alineados a la derecha. Ordena
+periodos completos de más reciente a más antiguo, después los incompletos, con
+desempate por identificador. Seleccionar una fila muestra su identificador completo
+y la certificación de cada valor. Documentos distintos del mismo periodo permanecen
+separados. La ayuda está en «Cómo interpretar los documentos».
+No se almacenan resultados en caché.
+La consulta recorre el conjunto documental, sin paginación de servidor; está
+pensada para corpus locales.
+
+Para la persistencia legacy, `python -m scripts.init_db` crea únicamente el esquema,
+sin datos. La base predeterminada
 es `data/runtime/nominas.sqlite`; para otra ruta: `python -m scripts.init_db --db RUTA`.
 Las ingestas locales se ejecutan como módulos, por ejemplo `python -m scripts.ingest_ineco`.
-La UI admite `ANALISIS_NOMINAS_DB`. Los importes opcionales todavía usan ceros por
+En el modelo legacy los importes opcionales todavía usan ceros por
 compatibilidad con el modelo: no deben interpretarse como extracción confirmada.
 Los hechos conservan los valores extraídos y sus incertidumbres; no se corrigen
 descuadres silenciosamente. No se garantiza cobertura de formatos no certificados.

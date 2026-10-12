@@ -1,0 +1,19 @@
+# Native theme inspired by the minimal template; no remote fonts or custom CSS.
+[theme]
+base = "light"
+primaryColor = "#2563eb"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f5f9"
+textColor = "#172033"
+borderColor = "#dce3ec"
+baseRadius = "8px"
+font = "sans-serif"
+headingFontSizes = ["32px", "24px", "20px", "16px", "14px", "12px"]
+headingFontWeights = [600, 600, 600, 500, 500, 500]
+showWidgetBorder = true
+showSidebarBorder = true
+dataframeHeaderBackgroundColor = "#f1f5f9"
+
+[theme.sidebar]
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#e8eef8"
