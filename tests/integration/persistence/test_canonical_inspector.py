@@ -185,8 +185,11 @@ def test_read_only_all_commands_and_determinism(dataset, monkeypatch):
             assert writes == []
     monkeypatch.setattr(module, 'connect', guarded)
     before = dataset[0].read_bytes()
+    exports = dataset[0].parent / 'exports'
+    exports.mkdir()
     files = set(dataset[0].parent.iterdir())
     for args in [('companies',), ('documents',), ('documents', '--year', '2024'),
+                 ('documents', '--csv', str(exports / 'documents.csv')),
                  ('coverage',), ('summary',), ('observations',), ('facts',),
                  ('document', dataset[1].document_id), ('explain', dataset[2].observation_id)]:
         first, second = invoke(dataset, *args), invoke(dataset, *args)
@@ -852,3 +855,190 @@ def test_documents_privacy_order_and_missing_context(dataset):
     assert result.exit_code == 0, result.output
     for secret in ('SECRET', 'private/', 'cif', 'relative_path', 'original_filename', str(dataset[0])):
         assert secret not in result.output
+
+
+CSV_COLUMNS = ['document_id', 'company_text', 'year', 'month', 'gross_status',
+               'gross_amount', 'gross_currency', 'net_status', 'net_amount', 'net_currency']
+
+
+def _read_document_csv(path):
+    import csv
+    assert path.read_bytes().startswith(b'\xef\xbb\xbf')
+    with path.open(encoding='utf-8-sig', newline='') as handle:
+        reader = csv.DictReader(handle, delimiter=';')
+        assert reader.fieldnames == CSV_COLUMNS
+        return list(reader)
+
+
+@pytest.mark.parametrize('filtered', [False, True])
+def test_documents_csv_complete_and_filtered(dataset, tmp_path, filtered):
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        ext = repo.get_extraction(dataset[4][0].extraction_id)
+        assert ext is not None
+        _add_document_context(repo, ext, company='Árbol; "SL"\nSegunda línea')
+        version = repo.get_version(ext.version_id)
+        assert version is not None
+        other = replace(version, segment_key='other', version_id=version_id(
+            version.document_id, version.file_id, 'other'))
+        repo.register_version(other)
+        extra = replace(ext, version_id=other.version_id, extraction_id=extraction_id(
+            other.version_id, 'synthetic', '1', 'b'*64))
+        repo.register_extraction(extra)
+        _add_document_context(repo, extra, company='Árbol; "SL"\nSegunda línea')
+        repo.register_document(replace(dataset[1], origin_key='missing',
+            document_id=document_id(dataset[1].corpus_id, 'missing')))
+    before = dataset[0].read_bytes()
+    target = tmp_path / 'export.csv'
+    args = ('--company', 'Árbol; "SL"\nSegunda línea', '--year', '2024', '--month', '3') if filtered else ()
+    result = invoke(dataset, 'documents', *args, '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    rows = _read_document_csv(target)
+    assert len(rows) == (1 if filtered else 2)
+    assert [r['document_id'] for r in rows] == sorted(r['document_id'] for r in rows)
+    row = next(r for r in rows if r['document_id'] == dataset[1].document_id)
+    assert row == dict(zip(CSV_COLUMNS, [dataset[1].document_id, 'Árbol; "SL"\nSegunda línea',
+        '2024', '3', 'certified', '201.53', '', 'certified', '201.53', ''], strict=True))
+    if not filtered:
+        absent = next(r for r in rows if r is not row)
+        assert all(absent[k] == '' for k in ('company_text', 'year', 'month', 'gross_amount', 'net_amount'))
+        assert absent['gross_status'] == absent['net_status'] == 'no_observation'
+    assert dataset[0].read_bytes() == before
+    original = target.read_bytes()
+    assert invoke(dataset, 'documents', *args, '--csv', str(target)).exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize('variant', ['alten', 'ambiguous', 'not_certified'])
+def test_documents_csv_unavailable_amounts(dataset, tmp_path, variant):
+    from src.canonical.economics import observation_id
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        if variant == 'alten':
+            ext = repo.get_extraction(dataset[4][0].extraction_id)
+            assert ext is not None
+            _add_document_context(repo, ext, company='ALTEN', prefix='payload/')
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                'payload/total_devengado', CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(123, 0)))))
+            conn.execute('DELETE FROM observation_facts')
+            conn.execute('DELETE FROM economic_observations')
+        elif variant == 'ambiguous':
+            for magnitude in ('documentary_gross', 'documentary_net'):
+                identity = conn.execute('SELECT observation_id FROM economic_observations WHERE magnitude=?',
+                                        (magnitude,)).fetchone()[0]
+                evidence = repo.get_observation(identity)
+                assert evidence is not None
+                old = evidence.observation
+                repo.register_observation(replace(old, observation_key='extra-' + magnitude,
+                    observation_id=observation_id(old.assessment_id, 'extra-' + magnitude)), evidence.fact_ids)
+        else:
+            conn.execute("UPDATE economic_observations SET economic_status='pending'")
+    target = tmp_path / 'export.csv'
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    row, = _read_document_csv(target)
+    assert row['gross_status'] == row['net_status'] == ('no_observation' if variant == 'alten' else variant)
+    assert all(row[k] == '' for k in ('gross_amount', 'net_amount', 'gross_currency', 'net_currency'))
+
+
+@pytest.mark.parametrize('empty_database', [False, True])
+def test_documents_csv_empty(dataset, tmp_path, empty_database):
+    path = dataset[0]
+    if empty_database:
+        path = tmp_path / 'empty.sqlite'
+        with open_database(path, mode='create'):
+            pass
+    target = tmp_path / 'empty.csv'
+    result = CliRunner().invoke(cli, ['--db', str(path), 'documents', '--year', '2000', '--csv', str(target)])
+    assert result.exit_code == 0, result.output
+    assert _read_document_csv(target) == []
+
+
+@pytest.mark.parametrize('stage', ['create', 'write', 'replace'])
+@pytest.mark.parametrize('existing', [False, True])
+def test_documents_csv_atomic_failure(dataset, tmp_path, monkeypatch, stage, existing):
+    import src.canonical_inspector as module
+    target = tmp_path / 'export.csv'
+    if existing:
+        target.write_bytes(b'previous export')
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()}
+    def fail(*args, **kwargs):
+        raise OSError('synthetic write failure')
+    if stage == 'create':
+        monkeypatch.setattr(module, 'NamedTemporaryFile', fail)
+    elif stage == 'replace':
+        monkeypatch.setattr(module.os, 'replace', fail)
+    else:
+        original = module.csv.DictWriter
+        def failing_writer(*args, **kwargs):
+            writer = original(*args, **kwargs)
+            write_row = writer.writerow
+            calls = 0
+            def fail_after_header(row):
+                nonlocal calls
+                calls += 1
+                if calls > 1:
+                    fail()
+                return write_row(row)
+            monkeypatch.setattr(writer, 'writerow', fail_after_header)
+            return writer
+        monkeypatch.setattr(module.csv, 'DictWriter', failing_writer)
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code != 0
+    assert 'Error:' in result.output
+    assert 'synthetic write failure' in result.output
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()} == before
+
+
+@pytest.mark.parametrize('alias', ['direct', 'symlink', 'hardlink'])
+def test_documents_csv_cannot_replace_database(dataset, tmp_path, alias):
+    target = dataset[0] if alias == 'direct' else tmp_path / 'alias.csv'
+    if alias == 'symlink':
+        target.symlink_to(dataset[0])
+    if alias == 'hardlink':
+        target.hardlink_to(dataset[0])
+    before = dataset[0].read_bytes()
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code != 0
+    assert 'Error:' in result.output
+    assert 'must not be the SQLite database' in result.output
+    assert target.read_bytes() == dataset[0].read_bytes() == before
+
+
+def test_documents_csv_zero_currency_and_certification_guard(dataset, tmp_path, monkeypatch):
+    from src.canonical_inspection import CanonicalInspector
+    def query(self, **filters):
+        assert filters == {'company': 'Exact', 'year': 2024, 'month': 3}
+        return [{'document_id': 'synthetic', 'company_text': 'Exact', 'year': 2024, 'month': 3,
+                 'gross': {'status': 'certified', 'amount': ExactDecimal(0, 2), 'currency': 'EUR'},
+                 'net': {'status': 'not_certified', 'amount': ExactDecimal(999, 0), 'currency': 'EUR'}}]
+    monkeypatch.setattr(CanonicalInspector, 'documents', query)
+    target = tmp_path / 'zero.csv'
+    result = invoke(dataset, 'documents', '--company', 'Exact', '--year', '2024', '--month', '3',
+                    '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    row, = _read_document_csv(target)
+    assert row['gross_amount'] == '0'
+    assert row['gross_currency'] == 'EUR'
+    assert row['net_amount'] == row['net_currency'] == ''
+
+
+def test_documents_csv_missing_directory(dataset, tmp_path):
+    target = tmp_path / 'missing' / 'export.csv'
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code != 0
+    assert 'Cannot write CSV' in result.output
+    assert not target.parent.exists()
+
+
+def test_documents_csv_query_failure_preserves_destination(tmp_path):
+    target = tmp_path / 'export.csv'
+    target.write_bytes(b'previous export')
+    result = CliRunner().invoke(cli, ['--db', str(tmp_path / 'missing.sqlite'),
+                                     'documents', '--csv', str(target)])
+    assert result.exit_code != 0
+    assert 'Error:' in result.output
+    assert target.read_bytes() == b'previous export'
+    assert set(tmp_path.iterdir()) == {target}
