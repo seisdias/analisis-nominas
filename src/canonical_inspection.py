@@ -95,15 +95,95 @@ class CanonicalInspector:
         known = {name: not issues[name] and len(values[name]) == 1 for name in names}
         return {
             'company_text': next(iter(values['empresa'])) if known['empresa'] else None,
+            'company_texts': tuple(sorted(values['empresa'])),
+            'year': next(iter(values['anio'])) if known['anio'] else None,
+            'month': next(iter(values['mes'])) if known['mes'] else None,
             'period': (next(iter(values['anio'])), next(iter(values['mes'])))
                       if known['anio'] and known['mes'] else None,
             'fields': {
                 'company': (known['empresa'], tuple(sorted(issues['empresa']))),
+                'year': (known['anio'], tuple(sorted(issues['anio']))),
+                'month': (known['mes'], tuple(sorted(issues['mes']))),
                 'cif': (known['cif'], tuple(sorted(issues['cif']))),
                 'year_month': (known['anio'] and known['mes'],
                                tuple(sorted(issues['anio'] | issues['mes']))),
             },
         }
+
+    def companies(self) -> dict[str, Any]:
+        """Count logical documents by exact agreed documentary name, never employer ID.
+
+        Every version/extraction must agree. Incomplete or conflicting documents
+        remain unassigned, with the observed names and diagnostics for inspection.
+        """
+        counts: Counter[str] = Counter()
+        unassigned = []
+        for (identity,) in self._connection.execute(
+                'SELECT document_id FROM logical_documents ORDER BY document_id'):
+            context = self._documentary_context(identity)
+            name = context['company_text']
+            if name is not None:
+                counts[name] += 1
+            else:
+                unassigned.append({
+                    'document_id': identity,
+                    'company_texts': context['company_texts'],
+                    'diagnostics': context['fields']['company'][1],
+                })
+        return {
+            'companies': [{'company_text': name, 'documents': count}
+                          for name, count in sorted(counts.items())],
+            'unassigned_documents': unassigned,
+        }
+
+    def documents(self, *, company: str | None = None, year: int | None = None,
+                  month: int | None = None) -> list[dict[str, Any]]:
+        """One row per logical document; filters require an agreed documentary field.
+
+        Missing/conflicting fields remain explicit in unfiltered rows. An amount
+        requires exactly one observation of its magnitude and existing value
+        certification, including document provenance. Never select a version or
+        merge observations, even equal ones. Certification does not imply additivity.
+        """
+        for label, value, upper in (('Year', year, 9999), ('Month', month, 12)):
+            if value is not None and (type(value) is not int or not 1 <= value <= upper):
+                raise InspectionError(f'{label} must be between 1 and {upper}')
+        result = []
+        for (identity,) in self._connection.execute(
+                'SELECT document_id FROM logical_documents ORDER BY document_id'):
+            context = self._documentary_context(identity)
+            if any(wanted is not None and context[key] != wanted
+                   for key, wanted in (('company_text', company), ('year', year), ('month', month))):
+                continue
+            row = {
+                'document_id': identity, 'company_text': context['company_text'],
+                'year': context['year'], 'month': context['month'],
+                'context_diagnostics': {key: context['fields'][key][1]
+                                        for key in ('company', 'year', 'month')},
+            }
+            for field, magnitude in (('gross', 'documentary_gross'), ('net', 'documentary_net')):
+                ids = [r[0] for r in self._connection.execute(
+                    'SELECT o.observation_id FROM economic_observations o '
+                    'JOIN assessments a ON a.assessment_id=o.assessment_id '
+                    'WHERE a.document_id=? AND o.magnitude=? ORDER BY o.observation_id',
+                    (identity, magnitude))]
+                availability: dict[str, Any]
+                if not ids:
+                    availability = {'status': 'no_observation'}
+                elif len(ids) > 1:
+                    availability = {'status': 'ambiguous'}
+                else:
+                    explanation = self.explain(ids[0], CertificationRequirements())
+                    certification = explanation['certification']
+                    if certification['status'] == 'certified':
+                        value = explanation['observation'].value
+                        availability = {'status': 'certified', 'amount': value.value,
+                                        'currency': value.currency}
+                    else:
+                        availability = {'status': 'not_certified'}
+                row[field] = availability
+            result.append(row)
+        return result
 
     def coverage(self) -> dict[str, Any]:
         """Structural coverage in this read snapshot, never economic inclusion."""

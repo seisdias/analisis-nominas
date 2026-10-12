@@ -17,7 +17,7 @@ from src.canonical.documents import (
 )
 from src.canonical.evidence import Corpus, Person, SourceFile, corpus_id, person_id, source_file_id
 from src.canonical.facts import DocumentaryFact, FactDraft
-from src.canonical.values import CanonicalValue, ExactDecimal, ValueState
+from src.canonical.values import CanonicalValue, CurrencyCode, ExactDecimal, ValueState
 from src.canonical_inspector import cli
 from src.economic_mapping import evaluate_direct_totals
 from src.persistence import open_database
@@ -25,7 +25,7 @@ from src.persistence.economics import EconomicRepository
 
 
 @pytest.fixture
-def dataset(tmp_path):
+def dataset(tmp_path, request):
     path = tmp_path / 'canonical.sqlite'
     with open_database(path, mode='create') as db:
         repo = EconomicRepository(db.connection)
@@ -45,7 +45,8 @@ def dataset(tmp_path):
         repo.register_version(ver)
         repo.register_extraction(ext)
         facts = tuple(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(key,
-            CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(20153, 2))))
+            CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(20153, 2),
+                           currency=getattr(request, 'param', None))))
             for key in ('nomina.total_devengado', 'nomina.liquido_percibir'))
         for fact in facts:
             repo.register_fact(fact)
@@ -71,7 +72,7 @@ def invoke(dataset, *args):
 def test_help_needs_no_database():
     result = CliRunner().invoke(cli, ['--help'])
     assert result.exit_code == 0
-    for command in ('summary', 'observations', 'explain', 'facts', 'document'):
+    for command in ('companies', 'documents', 'summary', 'observations', 'explain', 'facts', 'document'):
         assert command in result.output
 
 
@@ -185,8 +186,12 @@ def test_read_only_all_commands_and_determinism(dataset, monkeypatch):
             assert writes == []
     monkeypatch.setattr(module, 'connect', guarded)
     before = dataset[0].read_bytes()
+    exports = dataset[0].parent / 'exports'
+    exports.mkdir()
     files = set(dataset[0].parent.iterdir())
-    for args in [('coverage',), ('summary',), ('observations',), ('facts',),
+    for args in [('companies',), ('documents',), ('documents', '--year', '2024'),
+                 ('documents', '--csv', str(exports / 'documents.csv')),
+                 ('coverage',), ('summary',), ('observations',), ('facts',),
                  ('document', dataset[1].document_id), ('explain', dataset[2].observation_id)]:
         first, second = invoke(dataset, *args), invoke(dataset, *args)
         assert first.exit_code == second.exit_code == 0, first.output
@@ -506,3 +511,559 @@ def test_coverage_documentary_formats_preserve_extraction_counts(dataset, format
     assert total['documentary_gross']['certified_documents'] == 1
     assert total['eligibility'] == {'evidence_only': 3}
     assert dataset[0].read_bytes() == before
+
+
+@pytest.mark.parametrize('prefix', ['nomina.', 'payload/'])
+@pytest.mark.parametrize('names', [('Empresa exacta',), ('Empresa exacta', 'Empresa exacta'),
+                                  ('Empresa exacta', 'Otra empresa'), ('Empresa exacta', None)])
+def test_companies_documentary_versions(dataset, prefix, names):
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        source = repo.get_extraction(dataset[4][0].extraction_id)
+        assert source is not None
+        original = repo.get_version(source.version_id)
+        assert original is not None
+        for index, name in enumerate(names):
+            ext = source
+            if index:
+                version = replace(original, segment_key=str(index), version_id=version_id(
+                    original.document_id, original.file_id, str(index)))
+                repo.register_version(version)
+                ext = replace(source, version_id=version.version_id, extraction_id=extraction_id(
+                    version.version_id, 'synthetic', '1', 'b'*64))
+                repo.register_extraction(ext)
+            if name is not None:
+                repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                    prefix + 'empresa', CanonicalValue(state=ValueState.PRESENT, value=name))))
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                prefix + 'cif', CanonicalValue(state=ValueState.PRESENT, value='SECRET_TAX_ID'))))
+    with open_inspector(dataset[0]) as inspector:
+        report = inspector.companies()
+    coherent = len(set(names)) == 1
+    assert report['companies'] == ([{'company_text': 'Empresa exacta', 'documents': 1}]
+                                    if coherent else [])
+    assert len(report['unassigned_documents']) == int(not coherent)
+    if not coherent:
+        assert report['unassigned_documents'] == [{
+            'document_id': dataset[1].document_id,
+            'company_texts': tuple(sorted(n for n in names if n is not None)),
+            'diagnostics': ('missing_fact',) if None in names else ('conflicting_values',),
+        }]
+    result = invoke(dataset, 'companies')
+    assert result.exit_code == 0, result.output
+    assert 'Empresa exacta' in result.output
+    for private in ('SECRET_TAX_ID', 'cif', '201.53', 'employer_id', 'documentary_gross'):
+        assert private not in result.output
+
+
+def test_companies_empty_database(tmp_path):
+    from src.canonical_inspection import open_inspector
+    path = tmp_path / 'empty.sqlite'
+    with open_database(path, mode='create'):
+        pass
+    with open_inspector(path) as inspector:
+        assert inspector.companies() == {'companies': [], 'unassigned_documents': []}
+    result = CliRunner().invoke(cli, ['--db', str(path), 'companies'])
+    assert result.exit_code == 0, result.output
+    assert '(none)' in result.output
+
+
+def test_companies_exact_grouping_and_order(dataset):
+    from src.canonical.evidence import Employer, employer_id
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        employer = Employer(employer_id('ES', 'SYNTHETIC'), 'ES', 'SYNTHETIC', 'Canonical name')
+        repo.register_employer(employer)
+        source = repo.get_extraction(dataset[4][0].extraction_id)
+        assert source is not None
+        original = repo.get_version(source.version_id)
+        assert original is not None
+        for index, name in enumerate(('Zeta', ' Alfa ', 'Alfa', 'Alfa')):
+            key = f'company-{index}'
+            doc = replace(dataset[1], origin_key=key,
+                          document_id=document_id(dataset[1].corpus_id, key),
+                          employer_id=employer.employer_id if index != 3 else None)
+            repo.register_document(doc)
+            version = replace(original, document_id=doc.document_id,
+                              version_id=version_id(doc.document_id, original.file_id, 'whole'))
+            repo.register_version(version)
+            ext = replace(source, version_id=version.version_id, extraction_id=extraction_id(
+                version.version_id, 'synthetic', '1', 'b'*64))
+            repo.register_extraction(ext)
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                'nomina.empresa', CanonicalValue(state=ValueState.PRESENT, value=name))))
+    with open_inspector(dataset[0]) as inspector:
+        report = inspector.companies()
+    assert report['companies'] == [
+        {'company_text': ' Alfa ', 'documents': 1},
+        {'company_text': 'Alfa', 'documents': 2},
+        {'company_text': 'Zeta', 'documents': 1},
+    ]
+    assert report['unassigned_documents'] == [{
+        'document_id': dataset[1].document_id, 'company_texts': (), 'diagnostics': ('missing_fact',),
+    }]
+
+
+def _add_document_context(repo, extraction, company='EXCELTIC SL', year=2024, month=3,
+                          prefix='nomina.'):
+    for key, value in (('empresa', company), ('anio', year), ('mes', month)):
+        if value is not None:
+            raw = ExactDecimal(value, 0) if isinstance(value, int) else value
+            repo.register_fact(DocumentaryFact.from_draft(extraction.extraction_id, FactDraft(
+                prefix + key, CanonicalValue(state=ValueState.PRESENT, value=raw))))
+
+
+@pytest.mark.parametrize('filters,expected', [
+    ({}, 1), ({'year': 2024}, 1), ({'month': 3}, 1), ({'company': 'EXCELTIC SL'}, 1),
+    ({'company': 'EXCELTIC SL', 'year': 2024, 'month': 3}, 1),
+    ({'company': 'EXCELTIC SL', 'year': 2024, 'month': 4}, 0),
+    ({'year': 2023}, 0), ({'company': 'exceltic sl'}, 0),
+    ({'company': ' EXCELTIC SL'}, 0), ({'company': "' OR 1=1 --"}, 0),
+])
+def test_documents_filters_and_certified_amounts(dataset, filters, expected):
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        ext = repo.get_extraction(dataset[4][0].extraction_id)
+        assert ext is not None
+        _add_document_context(repo, ext)
+    with open_inspector(dataset[0]) as inspector:
+        rows = inspector.documents(**filters)
+    assert len(rows) == expected
+    if rows:
+        row = rows[0]
+        assert row['document_id'] == dataset[1].document_id
+        assert (row['company_text'], row['year'], row['month']) == ('EXCELTIC SL', 2024, 3)
+        assert row['context_diagnostics'] == {'company': (), 'year': (), 'month': ()}
+        for key in ('gross', 'net'):
+            assert row[key] == {'status': 'certified', 'amount': ExactDecimal(20153, 2),
+                                'currency': None}
+    args = [arg for key, value in filters.items() for arg in ('--' + key, str(value))]
+    result = invoke(dataset, 'documents', *args)
+    assert result.exit_code == 0, result.output
+    assert result.output.count('document_id:') == expected
+    assert result.output.count('amount: 201.53') == 2 * expected
+
+
+@pytest.mark.parametrize('variant', ['coherent', 'conflict', 'missing', 'unextracted'])
+@pytest.mark.parametrize('same_version', [False, True])
+def test_documents_context_across_versions_and_extractions(dataset, variant, same_version):
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        ext = repo.get_extraction(dataset[4][0].extraction_id)
+        assert ext is not None
+        _add_document_context(repo, ext)
+        version = repo.get_version(ext.version_id)
+        assert version is not None
+        if not same_version or variant == 'unextracted':
+            version = replace(version, segment_key='extra', version_id=version_id(
+                version.document_id, version.file_id, 'extra'))
+            repo.register_version(version)
+        if variant != 'unextracted':
+            extra = replace(ext, version_id=version.version_id, extractor_revision='2',
+                            extraction_id=extraction_id(version.version_id, 'synthetic', '2', 'b'*64))
+            repo.register_extraction(extra)
+            _add_document_context(repo, extra,
+                company='Otra' if variant == 'conflict' else None if variant == 'missing' else 'EXCELTIC SL',
+                year=2025 if variant == 'conflict' else 2024,
+                month=None if variant == 'missing' else 3)
+    with open_inspector(dataset[0]) as inspector:
+        rows = inspector.documents()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row['company_text'] == ('EXCELTIC SL' if variant == 'coherent' else None)
+        assert row['year'] == (None if variant in ('conflict', 'unextracted') else 2024)
+        assert row['month'] == (None if variant in ('missing', 'unextracted') else 3)
+        assert bool(row['context_diagnostics']['company']) == (variant != 'coherent')
+        assert len(inspector.documents(company='EXCELTIC SL')) == int(variant == 'coherent')
+        assert len(inspector.documents(year=2024)) == int(variant in ('coherent', 'missing'))
+        assert len(inspector.documents(month=3)) == int(variant in ('coherent', 'conflict'))
+        if variant == 'conflict':
+            assert row['context_diagnostics']['company'] == ('conflicting_values',)
+            assert row['context_diagnostics']['year'] == ('conflicting_values',)
+        # A unique certified observation retains its document link; no version is selected.
+        assert row['gross']['amount'] == ExactDecimal(20153, 2)
+
+
+@pytest.mark.parametrize('variant', ['duplicate', 'conflicting', 'blocked', 'mixed', 'zero'])
+def test_documents_amount_availability(dataset, variant):
+    from src.canonical.economics import observation_id
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        old = dataset[2]
+        evidence = repo.get_observation(old.observation_id)
+        assert evidence is not None
+        if variant == 'blocked':
+            # Synthetic corruption: PRESENT documentary facts must not rescue a blocked observation.
+            conn.execute("UPDATE economic_observations SET economic_status='pending' "
+                         'WHERE observation_id=?', (old.observation_id,))
+        elif variant in ('duplicate', 'mixed'):
+            new = replace(old, observation_key='other',
+                          observation_id=observation_id(old.assessment_id, 'other'),
+                          economic_status='pending' if variant == 'mixed' else old.economic_status)
+            repo.register_observation(new, evidence.fact_ids)
+        else:
+            ext = repo.get_extraction(dataset[4][0].extraction_id)
+            assert ext is not None
+            extra = replace(ext, extractor_revision='2',
+                            extraction_id=extraction_id(ext.version_id, 'synthetic', '2', 'b'*64))
+            repo.register_extraction(extra)
+            facts = tuple(DocumentaryFact.from_draft(extra.extraction_id, FactDraft(key,
+                CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(0 if variant == 'zero' else 777, 0))))
+                for key in ('nomina.total_devengado', 'nomina.liquido_percibir'))
+            for fact in facts:
+                repo.register_fact(fact)
+            mapped = evaluate_direct_totals(dataset[1].document_id, facts)
+            repo.register_rule(mapped.rule)
+            repo.register_assessment(mapped.assessment)
+            if variant == 'zero':
+                conn.execute('DELETE FROM observation_facts')
+                conn.execute('DELETE FROM economic_observations')
+            for item in mapped.observations:
+                repo.register_observation(item.observation, item.fact_ids)
+    with open_inspector(dataset[0]) as inspector:
+        row = inspector.documents()[0]
+    # dataset[2] may be net or gross: check its actual magnitude.
+    target = 'gross' if dataset[2].magnitude == 'documentary_gross' else 'net'
+    if variant == 'zero':
+        assert row[target]['status'] == 'certified'
+        assert row[target]['amount'] == ExactDecimal(0, 0)
+    else:
+        assert row[target]['status'] == ('not_certified' if variant == 'blocked' else 'ambiguous')
+        assert 'amount' not in row[target]
+    result = invoke(dataset, 'documents')
+    assert result.exit_code == 0, result.output
+    if variant == 'conflicting':
+        assert 'amount:' not in result.output
+        assert '777' not in result.output
+
+
+def test_documents_alten_facts_without_observations(dataset):
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        ext = repo.get_extraction(dataset[4][0].extraction_id)
+        assert ext is not None
+        _add_document_context(repo, ext, company='ALTEN', prefix='payload/')
+        for key in ('total_devengado', 'liquido_percibir'):
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                'payload/' + key, CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(99999, 2)))))
+        conn.execute('DELETE FROM observation_facts')
+        conn.execute('DELETE FROM economic_observations')
+    with open_inspector(dataset[0]) as inspector:
+        row = inspector.documents(company='ALTEN', year=2024, month=3)[0]
+    assert row['gross'] == row['net'] == {'status': 'no_observation'}
+    result = invoke(dataset, 'documents')
+    assert result.exit_code == 0, result.output
+    assert 'amount:' not in result.output
+    assert '999.99' not in result.output
+
+
+def test_documents_empty_database(tmp_path):
+    from src.canonical_inspection import open_inspector
+    path = tmp_path / 'empty.sqlite'
+    with open_database(path, mode='create'):
+        pass
+    with open_inspector(path) as inspector:
+        assert inspector.documents() == []
+    result = CliRunner().invoke(cli, ['--db', str(path), 'documents'])
+    assert result.exit_code == 0, result.output
+    assert result.output == '(none)\n'
+
+
+@pytest.mark.parametrize('option,value', [('--month', '0'), ('--month', '13'),
+                                        ('--month', '1.5'), ('--year', '0'), ('--year', '10000')])
+def test_documents_invalid_filters(dataset, option, value):
+    result = invoke(dataset, 'documents', option, value)
+    assert result.exit_code != 0
+    assert 'Invalid value' in result.output
+
+
+@pytest.mark.parametrize('variant', ['wrong_value', 'wrong_support', 'multiple_extractions'])
+def test_documents_require_certified_support(dataset, variant):
+    from src.canonical.economics import observation_id
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        old = dataset[2]
+        evidence = repo.get_observation(old.observation_id)
+        assert evidence is not None
+        conn.execute('DELETE FROM observation_facts WHERE observation_id=?', (old.observation_id,))
+        conn.execute('DELETE FROM economic_observations WHERE observation_id=?', (old.observation_id,))
+        if variant == 'multiple_extractions':
+            ext = repo.get_extraction(dataset[4][0].extraction_id)
+            assert ext is not None
+            extra = replace(ext, extractor_revision='2',
+                            extraction_id=extraction_id(ext.version_id, 'synthetic', '2', 'b'*64))
+            repo.register_extraction(extra)
+            fact = DocumentaryFact.from_draft(extra.extraction_id, FactDraft('nomina.empresa',
+                CanonicalValue(state=ValueState.PRESENT, value='EXCELTIC SL')))
+            repo.register_fact(fact)
+            mapped = evaluate_direct_totals(dataset[1].document_id, (*dataset[4], fact))
+            repo.register_rule(mapped.rule)
+            repo.register_assessment(mapped.assessment)
+            new = replace(old, assessment_id=mapped.assessment.assessment_id,
+                          observation_id=observation_id(mapped.assessment.assessment_id, old.observation_key))
+        else:
+            new = replace(old, value=CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(999, 0)))
+        support = (next(f.fact_id for f in dataset[4] if f.fact_id not in evidence.fact_ids),)
+        repo.register_observation(old if variant == 'wrong_support' else new,
+                                  support if variant == 'wrong_support' else evidence.fact_ids)
+    with open_inspector(dataset[0]) as inspector:
+        row = inspector.documents()[0]
+    target = 'gross' if old.magnitude == 'documentary_gross' else 'net'
+    assert row[target] == {'status': 'not_certified'}
+
+
+def test_documents_privacy_order_and_missing_context(dataset):
+    from src.canonical.evidence import FileLocation
+    from src.canonical_inspection import open_inspector
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        ext = repo.get_extraction(dataset[4][0].extraction_id)
+        assert ext is not None
+        version = repo.get_version(ext.version_id)
+        assert version is not None
+        repo.register_location(FileLocation(dataset[1].corpus_id,
+            'private/SECRET_PAYROLL.pdf', version.file_id, 'SECRET_PAYROLL.pdf'))
+        repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft('nomina.cif',
+            CanonicalValue(state=ValueState.PRESENT, value='SECRET_TAX_ID'))))
+        for key in ('z-last', 'a-first'):
+            repo.register_document(replace(dataset[1], origin_key=key,
+                document_id=document_id(dataset[1].corpus_id, key)))
+    with open_inspector(dataset[0]) as inspector:
+        rows = inspector.documents()
+    assert len(rows) == 3
+    assert [r['document_id'] for r in rows] == sorted(r['document_id'] for r in rows)
+    for row in rows:
+        assert (row['company_text'], row['year'], row['month']) == (None, None, None)
+        assert all(row['context_diagnostics'].values())
+        if row['document_id'] != dataset[1].document_id:
+            assert row['gross'] == row['net'] == {'status': 'no_observation'}
+    result = invoke(dataset, 'documents')
+    assert result.exit_code == 0, result.output
+    for secret in ('SECRET', 'private/', 'cif', 'relative_path', 'original_filename', str(dataset[0])):
+        assert secret not in result.output
+
+
+CSV_COLUMNS = ['document_id', 'company_text', 'year', 'month', 'gross_status',
+               'gross_amount', 'gross_currency', 'net_status', 'net_amount', 'net_currency']
+
+
+def _read_document_csv(path):
+    import csv
+    assert path.read_bytes().startswith(b'\xef\xbb\xbf')
+    with path.open(encoding='utf-8-sig', newline='') as handle:
+        reader = csv.DictReader(handle, delimiter=';')
+        assert reader.fieldnames == CSV_COLUMNS
+        return list(reader)
+
+
+@pytest.mark.parametrize('filtered', [False, True])
+def test_documents_csv_complete_and_filtered(dataset, tmp_path, filtered):
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        ext = repo.get_extraction(dataset[4][0].extraction_id)
+        assert ext is not None
+        _add_document_context(repo, ext, company='Árbol; "SL"\nSegunda línea')
+        version = repo.get_version(ext.version_id)
+        assert version is not None
+        other = replace(version, segment_key='other', version_id=version_id(
+            version.document_id, version.file_id, 'other'))
+        repo.register_version(other)
+        extra = replace(ext, version_id=other.version_id, extraction_id=extraction_id(
+            other.version_id, 'synthetic', '1', 'b'*64))
+        repo.register_extraction(extra)
+        _add_document_context(repo, extra, company='Árbol; "SL"\nSegunda línea')
+        repo.register_document(replace(dataset[1], origin_key='missing',
+            document_id=document_id(dataset[1].corpus_id, 'missing')))
+    before = dataset[0].read_bytes()
+    target = tmp_path / 'export.csv'
+    args = ('--company', 'Árbol; "SL"\nSegunda línea', '--year', '2024', '--month', '3') if filtered else ()
+    result = invoke(dataset, 'documents', *args, '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    rows = _read_document_csv(target)
+    assert len(rows) == (1 if filtered else 2)
+    assert [r['document_id'] for r in rows] == sorted(r['document_id'] for r in rows)
+    row = next(r for r in rows if r['document_id'] == dataset[1].document_id)
+    assert row == dict(zip(CSV_COLUMNS, [dataset[1].document_id, 'Árbol; "SL"\nSegunda línea',
+        '2024', '3', 'certified', '201.53', '', 'certified', '201.53', ''], strict=True))
+    if not filtered:
+        absent = next(r for r in rows if r is not row)
+        assert all(absent[k] == '' for k in ('company_text', 'year', 'month', 'gross_amount', 'net_amount'))
+        assert absent['gross_status'] == absent['net_status'] == 'no_observation'
+    assert dataset[0].read_bytes() == before
+    original = target.read_bytes()
+    assert invoke(dataset, 'documents', *args, '--csv', str(target)).exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize('variant', ['alten', 'ambiguous', 'not_certified'])
+def test_documents_csv_unavailable_amounts(dataset, tmp_path, variant):
+    from src.canonical.economics import observation_id
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('PRAGMA foreign_keys=ON')
+        repo = EconomicRepository(conn)
+        if variant == 'alten':
+            ext = repo.get_extraction(dataset[4][0].extraction_id)
+            assert ext is not None
+            _add_document_context(repo, ext, company='ALTEN', prefix='payload/')
+            repo.register_fact(DocumentaryFact.from_draft(ext.extraction_id, FactDraft(
+                'payload/total_devengado', CanonicalValue(state=ValueState.PRESENT, value=ExactDecimal(123, 0)))))
+            conn.execute('DELETE FROM observation_facts')
+            conn.execute('DELETE FROM economic_observations')
+        elif variant == 'ambiguous':
+            for magnitude in ('documentary_gross', 'documentary_net'):
+                identity = conn.execute('SELECT observation_id FROM economic_observations WHERE magnitude=?',
+                                        (magnitude,)).fetchone()[0]
+                evidence = repo.get_observation(identity)
+                assert evidence is not None
+                old = evidence.observation
+                repo.register_observation(replace(old, observation_key='extra-' + magnitude,
+                    observation_id=observation_id(old.assessment_id, 'extra-' + magnitude)), evidence.fact_ids)
+        else:
+            conn.execute("UPDATE economic_observations SET economic_status='pending'")
+    target = tmp_path / 'export.csv'
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    row, = _read_document_csv(target)
+    assert row['gross_status'] == row['net_status'] == ('no_observation' if variant == 'alten' else variant)
+    assert all(row[k] == '' for k in ('gross_amount', 'net_amount', 'gross_currency', 'net_currency'))
+
+
+@pytest.mark.parametrize('empty_database', [False, True])
+def test_documents_csv_empty(dataset, tmp_path, empty_database):
+    path = dataset[0]
+    if empty_database:
+        path = tmp_path / 'empty.sqlite'
+        with open_database(path, mode='create'):
+            pass
+    target = tmp_path / 'empty.csv'
+    result = CliRunner().invoke(cli, ['--db', str(path), 'documents', '--year', '2000', '--csv', str(target)])
+    assert result.exit_code == 0, result.output
+    assert _read_document_csv(target) == []
+
+
+@pytest.mark.parametrize('stage', ['create', 'write', 'replace'])
+@pytest.mark.parametrize('existing', [False, True])
+def test_documents_csv_atomic_failure(dataset, tmp_path, monkeypatch, stage, existing):
+    import src.canonical_inspector as module
+    target = tmp_path / 'export.csv'
+    if existing:
+        target.write_bytes(b'previous export')
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()}
+    def fail(*args, **kwargs):
+        raise OSError('synthetic write failure')
+    if stage == 'create':
+        monkeypatch.setattr(module, 'NamedTemporaryFile', fail)
+    elif stage == 'replace':
+        monkeypatch.setattr(module.os, 'replace', fail)
+    else:
+        original = module.csv.DictWriter
+        def failing_writer(*args, **kwargs):
+            writer = original(*args, **kwargs)
+            write_row = writer.writerow
+            calls = 0
+            def fail_after_header(row):
+                nonlocal calls
+                calls += 1
+                if calls > 1:
+                    fail()
+                return write_row(row)
+            monkeypatch.setattr(writer, 'writerow', fail_after_header)
+            return writer
+        monkeypatch.setattr(module.csv, 'DictWriter', failing_writer)
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code != 0
+    assert 'Error:' in result.output
+    assert 'synthetic write failure' in result.output
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()} == before
+
+
+@pytest.mark.parametrize('alias', ['direct', 'symlink', 'hardlink'])
+def test_documents_csv_cannot_replace_database(dataset, tmp_path, alias):
+    target = dataset[0] if alias == 'direct' else tmp_path / 'alias.csv'
+    if alias == 'symlink':
+        target.symlink_to(dataset[0])
+    if alias == 'hardlink':
+        target.hardlink_to(dataset[0])
+    before = dataset[0].read_bytes()
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code != 0
+    assert 'Error:' in result.output
+    assert 'must not be the SQLite database' in result.output
+    assert target.read_bytes() == dataset[0].read_bytes() == before
+
+
+def test_documents_csv_zero_currency_and_certification_guard(dataset, tmp_path, monkeypatch):
+    from src.canonical_inspection import CanonicalInspector
+    def query(self, **filters):
+        assert filters == {'company': 'Exact', 'year': 2024, 'month': 3}
+        return [{'document_id': 'synthetic', 'company_text': 'Exact', 'year': 2024, 'month': 3,
+                 'gross': {'status': 'certified', 'amount': ExactDecimal(0, 2), 'currency': CurrencyCode('EUR')},
+                 'net': {'status': 'not_certified', 'amount': ExactDecimal(999, 0), 'currency': CurrencyCode('EUR')}}]
+    monkeypatch.setattr(CanonicalInspector, 'documents', query)
+    target = tmp_path / 'zero.csv'
+    result = invoke(dataset, 'documents', '--company', 'Exact', '--year', '2024', '--month', '3',
+                    '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    row, = _read_document_csv(target)
+    assert row['gross_amount'] == '0'
+    assert row['gross_currency'] == 'EUR'
+    assert row['net_amount'] == row['net_currency'] == ''
+
+
+def test_documents_csv_missing_directory(dataset, tmp_path):
+    target = tmp_path / 'missing' / 'export.csv'
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code != 0
+    assert 'Cannot write CSV' in result.output
+    assert not target.parent.exists()
+
+
+def test_documents_csv_query_failure_preserves_destination(tmp_path):
+    target = tmp_path / 'export.csv'
+    target.write_bytes(b'previous export')
+    result = CliRunner().invoke(cli, ['--db', str(tmp_path / 'missing.sqlite'),
+                                     'documents', '--csv', str(target)])
+    assert result.exit_code != 0
+    assert 'Error:' in result.output
+    assert target.read_bytes() == b'previous export'
+    assert set(tmp_path.iterdir()) == {target}
+
+
+@pytest.mark.parametrize('dataset,expected_currency', [(CurrencyCode('EUR'), 'EUR'), (None, '')],
+                         indirect=['dataset'])
+def test_documents_csv_real_currency(dataset, tmp_path, expected_currency):
+    from src.canonical_inspection import open_inspector
+    with open_inspector(dataset[0]) as inspector:
+        before = inspector.documents()
+    for field in ('gross', 'net'):
+        currency = before[0][field]['currency']
+        assert currency == (CurrencyCode('EUR') if expected_currency else None)
+        if expected_currency:
+            assert isinstance(currency, CurrencyCode)
+    target = tmp_path / 'currency.csv'
+    database_bytes = dataset[0].read_bytes()
+    result = invoke(dataset, 'documents', '--csv', str(target))
+    assert result.exit_code == 0, result.output
+    row, = _read_document_csv(target)
+    assert row == dict(zip(CSV_COLUMNS, [dataset[1].document_id, '', '', '',
+        'certified', '201.53', expected_currency, 'certified', '201.53', expected_currency], strict=True))
+    assert 'CurrencyCode' not in target.read_text(encoding='utf-8-sig')
+    with open_inspector(dataset[0]) as inspector:
+        assert inspector.documents() == before
+    assert dataset[0].read_bytes() == database_bytes
