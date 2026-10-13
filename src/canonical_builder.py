@@ -25,8 +25,21 @@ def _report(report: BuildReport) -> None:
 def cli(config_path: Path, output: Path) -> None:
     """Build a persistent canonical v8 SQLite using the certified ingestion pipeline.
 
-    Explicit exclusions only. No new economic policy. Publication requires zero
-    failed items and verified schema; failed provisional builds are discarded.
+    ALTEN A.2 projects only single-version documents after complete ingestion
+    and an unchanged full inventory check. It adds projection extractions,
+    facts and assessments using the existing direct-totals rule. Valid totals
+    produce gross/net evidence_only observations, subject to existing
+    documentary-value certification; they are not eligible for aggregation.
+    Multiversion documents receive no projection or economic observations.
+
+    Ordinary corpora support explicit exclusions. ALTEN forbids them: only
+    annual certificates recognized by its processor may be skipped. Other skips
+    (including nonextractable PDFs), failures or inventory changes block
+    publication. Projection requires a fresh complete build, not incremental
+    ingestion; original evidence is preserved.
+
+    Publication requires zero failed items, verified schema and successful
+    ALTEN finalization where applicable. Failed provisional builds are discarded.
     """
     try:
         report = build(load_config(config_path), output)
