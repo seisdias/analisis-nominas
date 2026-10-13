@@ -6,7 +6,23 @@ certificados y congelados. No incluye OCR.
 
 La infraestructura canónica T6 está certificada y congelada: usa una única SQLite, esquema v8, SQL explícito y
 migraciones 0001–0008. Separa evidencia, interpretación, decisiones humanas y caché
-derivada reconstruible. ALTEN sigue `UNRESOLVED`, sin candidatas económicas.
+derivada reconstruible.
+
+En ALTEN A.2, el constructor canónico completa la ingesta y comprueba el inventario
+antes de proyectar los hechos de documentos lógicos con una única versión al
+vocabulario económico existente. La proyección añade extracciones, hechos trazables
+y evaluaciones; si los totales satisfacen la regla existente, crea observaciones de
+bruto y neto `evidence_only`, certificables como valores documentales por el contrato
+actual. No son candidatas agregables. Los documentos multiversión quedan sin
+proyección ni observaciones económicas; no se elige ninguna versión. Los hechos
+originales y su estado `UNRESOLVED` se conservan.
+
+Los corpus ALTEN no admiten exclusiones explícitas. Solo pueden omitirse los
+certificados anuales reconocidos por el procesador existente: PDFs sin texto
+extraíble, otras omisiones, fallos o cambios del inventario impiden publicar la
+base. Esta fase requiere una reconstrucción completa en una base nueva, no una
+ingesta incremental. Véanse las condiciones del [constructor canónico](examples/canonical-build.md).
+
 La interfaz consulta la base canónica en solo lectura. Los comandos históricos de
 ingesta usan la persistencia legacy; no crean la BD canónica definitiva. Véase el [contrato canónico](src/persistence/README.md)
 para reconstrucción, revisiones y certificación. No hay KPIs salariales nuevos.
