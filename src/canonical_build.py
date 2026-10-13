@@ -1,4 +1,4 @@
-"""Declarative construction using T6 ingestion; no economic or parser policy."""
+"""Declarative fresh builds: complete ingestion, then closed-inventory interpretation."""
 import json
 import os
 from dataclasses import dataclass, replace
@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import UUID
 
+from src.alten_projection import finalize_alten
 from src.canonical.evidence import Corpus, Person, corpus_id, person_id
 from src.canonical_ingestion import (
     CorpusInput,
@@ -163,6 +164,9 @@ def build(config: BuildConfig, output: Path) -> BuildReport:
                 raise BuildError('Ingestion failed; no database published', report)
             if status.current_version != 8 or status.pending_versions:
                 raise BuildError('Expected complete schema v8; no database published', report)
+            alten_ids = {s.corpus.corpus_id for s in config.corpora if s.processor_kind == 'alten'}
+            finalize_alten(db.connection, result.run_id,
+                           tuple(b for b in bindings if b.corpus_id in alten_ids), sources)
         os.chmod(staged, 0o600)
         with staged.open('rb') as handle:
             os.fsync(handle.fileno())

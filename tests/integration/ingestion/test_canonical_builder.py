@@ -203,7 +203,12 @@ def test_insis_alias_is_configuration_and_alten_uses_existing_processor(config, 
         corpus['exclusions'] = [{'path': 'synthetic.pdf', 'reason_code': 'explicit_skip'}]
         path.write_text(json.dumps(data))
         result = run(path, tmp_path/f'{kind}.sqlite')
-        assert result.exit_code == 0, result.output
+        if kind == 'ordinary':
+            assert result.exit_code == 0, result.output
+        else:
+            assert result.exit_code != 0
+            assert 'complete inventory without exclusions' in result.output
+            assert not (tmp_path/f'{kind}.sqlite').exists()
     assert calls == ['insis']
 
 
