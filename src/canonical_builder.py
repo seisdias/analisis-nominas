@@ -25,12 +25,14 @@ def _report(report: BuildReport) -> None:
 def cli(config_path: Path, output: Path) -> None:
     """Build a persistent canonical v8 SQLite using the certified ingestion pipeline.
 
-    ALTEN A.2 projects only single-version documents after complete ingestion
-    and an unchanged full inventory check. It adds projection extractions,
-    facts and assessments using the existing direct-totals rule. Valid totals
-    produce gross/net evidence_only observations, subject to existing
-    documentary-value certification; they are not eligible for aggregation.
-    Multiversion documents receive no projection or economic observations.
+    ALTEN projects single-version documents after complete ingestion and an
+    unchanged full inventory check. With optional alten_resolutions in the
+    build configuration, ALTEN A.3 also projects explicitly selected versions
+    of multiversion documents. Without resolutions, multiversion documents
+    receive no projection or economic observations. Resolution inventories
+    must match the available versions; stale or incomplete decisions block
+    finalization. Projection uses the existing direct-totals rule and creates
+    gross/net evidence_only observations, never eligible for aggregation.
 
     Ordinary corpora support explicit exclusions. ALTEN forbids them: only
     annual certificates recognized by its processor may be skipped. Other skips
