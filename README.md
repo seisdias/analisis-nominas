@@ -124,3 +124,40 @@ No hay despliegue automático ni credenciales de despliegue.
 `feature/*`, `fix/*`, `chore/*` → PR a `dev` con squash.
 `dev` → PR a `main` con merge commit para conservar ancestry.
 Sin commits directos a las ramas protegidas después del bootstrap inicial.
+
+### ALTEN A.3: selección explícita de versiones
+
+La configuración de construcción v1 admite el campo opcional `alten_resolutions`,
+ruta a un JSON privado relativa al archivo de configuración. Si se omite, se
+mantiene el comportamiento A.2: solo se proyectan documentos de versión única.
+Si se aporta, debe contener una decisión por cada documento multiversión del
+corpus ALTEN configurado; no se admiten listas vacías ni decisiones duplicadas.
+
+El archivo tiene los campos exactos `contract: "alten-version-resolutions"`,
+`version: 1` y `resolutions`. Cada resolución contiene exclusivamente
+`document_id`, `version_id`, `expected_version_ids` (lista completa sin duplicados)
+y `reason` (justificación humana). Los identificadores deben proceder del
+inventario real. El inventario se ordena canónicamente; no se infieren decisiones.
+Las versiones vinculan documento, SHA256 del PDF y segmento/página. Un cambio de
+inventario invalida la decisión. Guardar este archivo bajo `data/private/`, nunca
+en ejemplos públicos. Se rechazan campos adicionales, claves JSON duplicadas,
+tipos incorrectos y referencias ajenas al corpus.
+
+Este contrato representa una selección con efecto de proyección y es distinto
+de `canonical.decisions`, que solo reconoce hechos documentales sin efectos
+económicos. No modifica ese contrato ni el esquema SQLite v8.
+
+La proyección `alten-economic-projection/v2` conserva en `projection/manifest`
+la decisión, el inventario revisado, las huellas de hechos, las páginas, la
+extracción original y la ejecución de ingesta. Las bases A.2 siguen siendo
+legibles; aplicar v2 requiere construir una base nueva, no actualizar una
+proyección v1. Tampoco se permite cambiar una decisión sobre una base ya
+proyectada. La repetición exacta es idempotente; los estados parciales se rechazan.
+Todas las observaciones ALTEN permanecen `evidence_only`, excluidas de candidatos
+y KPIs. La selección no certifica por sí misma aditividad ni elegibilidad.
+
+Construir siempre con un destino nuevo mediante `python -m src.canonical_builder
+--config <configuración-privada> --output <candidata-nueva>`. La publicación sigue
+siendo atómica y sin sobrescritura. La reproducibilidad se compara con
+`CanonicalStateReader` (estado lógico, excluyendo marcas temporales operativas),
+no mediante igualdad binaria de los archivos SQLite.
