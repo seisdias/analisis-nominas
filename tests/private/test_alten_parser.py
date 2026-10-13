@@ -15,7 +15,7 @@ from src.services.ingestion_service import extract_pdf_document
 
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "data/test/alten"
-MANIFEST = ROOT / "data/private/alten-manifest.json"
+MANIFEST = ROOT / "data/private/alten-manifest-a3-v2.json"
 
 
 @pytest.fixture(scope="module")
@@ -24,16 +24,16 @@ def oracle() -> dict[str, Any]:
         pytest.fail("Missing private ALTEN manifest", pytrace=False)
     m = json.loads(MANIFEST.read_text())
     physical = m["physical_documents"]
-    assert len(physical) == len({d["sha256_pdf"] for d in physical}) == 55
-    assert sum(d["paginas"] for d in physical) == 84
+    assert len(physical) == len({d["sha256_pdf"] for d in physical}) == 59
+    assert sum(d["paginas"] for d in physical) == 88
     assert {p.name for p in CORPUS.iterdir() if p.suffix.lower() == ".pdf"} == {
         d["filename"] for d in physical
     }
     for d in physical:
         assert Path(d["filename"]).name == d["filename"]
         assert hashlib.sha256((CORPUS / d["filename"]).read_bytes()).hexdigest() == d["sha256_pdf"]
-    assert len(m["payroll_versions"]) == 78
-    assert len(m["period_groups"]) == 52
+    assert len(m["payroll_versions"]) == 82
+    assert len(m["period_groups"]) == 55
     return m
 
 
@@ -70,7 +70,7 @@ def number(actual, expected, label):
         pytest.fail(f"ALTEN mismatch: {label}", pytrace=False)
 
 
-@pytest.mark.parametrize("index", range(78), ids=lambda i: f"version-{i + 1}")
+@pytest.mark.parametrize("index", range(82), ids=lambda i: f"version-{i + 1}")
 def test_version(index, oracle, parsed, extracted):
     e = oracle["payroll_versions"][index]
     n = parsed[e["version_key"]]
@@ -128,13 +128,13 @@ def test_version(index, oracle, parsed, extracted):
 
 def test_quantitative_coverage(oracle, parsed, extracted):
     rows = [c for n in parsed.values() for c in n.conceptos]
-    assert len(rows) == sum(len(v["conceptos"]) for v in oracle["payroll_versions"]) == 637
+    assert len(rows) == sum(len(v["conceptos"]) for v in oracle["payroll_versions"]) == 665
     assert len({c.codigo for c in rows}) == 16
     assert len({(c.codigo, c.concepto) for c in rows}) == 16
     assert Counter(
         AltenParser.template(extracted[e["filename"]].pages[e["pagina"] - 1].text)
         for e in oracle["payroll_versions"]
-    ) == {"N1a": 11, "N1b": 37, "N2": 30}
+    ) == {"N1a": 11, "N1b": 38, "N2": 33}
     assert sum(n.pror_otros is not None for n in parsed.values()) == 12
     assert all(n.prorrata_pagas_extra is None for n in parsed.values())
 
@@ -142,13 +142,22 @@ def test_quantitative_coverage(oracle, parsed, extracted):
 def test_all_versions_retained(oracle, parsed):
     groups = defaultdict(list)
     for e in oracle["payroll_versions"]:
-        groups[e["period_key"]].append(parsed[e["version_key"]])
-    assert Counter(map(len, groups.values())) == {1: 27, 2: 24, 3: 1}
-    for group in groups.values():
-        assert len({n.id for n in group}) == 1  # Period ID, not a persistence key for versions.
-        assert len({json.dumps(n.to_dict(), sort_keys=True) for n in group}) == len(group)
-        for n in group:
+        groups[e["period_key"]].append(e["version_key"])
+    assert Counter(map(len, groups.values())) == {1: 30, 2: 23, 3: 2}
+    equivalent: list[list[str]] = []
+    for keys in groups.values():
+        assert len({parsed[k].id for k in keys}) == 1
+        payloads = defaultdict(list)
+        for key in keys:
+            n = parsed[key]
+            payloads[json.dumps(n.to_dict(), sort_keys=True)].append(key)
             assert not {"current_version", "supersedes", "paid"} & n.to_dict().keys()
+        equivalent.extend(sorted(ks) for ks in payloads.values() if len(ks) > 1)
+    # Distinct physical versions can reproduce identical payroll content. Only
+    # the independently reviewed pair in the private oracle is accepted.
+    expected = oracle["validation"]["economic_equivalence_groups"]
+    assert sorted(equivalent) == sorted(sorted(ks) for ks in expected)
+    assert len(equivalent) == 1 and len(equivalent[0]) == 2
 
 
 def test_multipage_contract(oracle, extracted, parsed):
@@ -187,7 +196,7 @@ def test_documentary_discrepancies_are_not_corrected(oracle, parsed):
         if e["validacion_importes"]["diferencia_dev_impreso_menos_filas"]
         or e["validacion_importes"]["diferencia_ded_impreso_menos_filas"]
     ]
-    assert len(entries) == 5
+    assert len(entries) == 6
     for e in entries:
         n = parsed[e["version_key"]]
         for col, field, key in [
@@ -198,3 +207,25 @@ def test_documentary_discrepancies_are_not_corrected(oracle, parsed):
                 getattr(n, field) - sum(c.importe for c in n.conceptos if c.columna == col), 2
             )
             number(delta, e["validacion_importes"][key], key)
+
+
+def test_oracle_extension_preserves_all_historical_versions(oracle):
+    historical_path = ROOT / 'data/private/alten-manifest.json'
+    historical_bytes = historical_path.read_bytes()
+    audit = oracle['revision_evidence']
+    assert hashlib.sha256(historical_bytes).hexdigest() == audit['previous_manifest_sha256']
+    historical = json.loads(historical_bytes)
+    relocation = audit['renamed_compilation']
+    current = {e['version_key']: e for e in oracle['payroll_versions']}
+    for entry in historical['payroll_versions']:
+        expected = dict(entry)
+        if expected['sha256_pdf'] == relocation['sha256']:
+            assert expected['filename'] == relocation['previous_path']
+            expected['filename'] = relocation['current_path']
+        assert current[entry['version_key']] == expected
+    assert set(current) - {e['version_key'] for e in historical['payroll_versions']} == set(audit['added_version_keys'])
+    assert len(audit['added_version_keys']) == 4
+    assert oracle['certificates'] == historical['certificates']
+    for physical in oracle['physical_documents']:
+        assert {p['pagina'] for p in physical['page_links']} == set(range(1, physical['paginas'] + 1))
+    assert len({r['sha256_pdf'] for r in oracle['physical_documents']}) == 59

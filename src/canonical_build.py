@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from src.alten_projection import finalize_alten
+from src.alten_resolutions import decode_resolutions
 from src.canonical.evidence import Corpus, Person, corpus_id, person_id
 from src.canonical_ingestion import (
     CorpusInput,
@@ -37,6 +38,7 @@ class BuildConfig:
     person: Person
     corpora: tuple[CorpusBuild, ...]
     application_revision: str
+    alten_resolutions: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -81,7 +83,7 @@ def load_config(path: Path) -> BuildConfig:
     """Relative sources resolve against JSON location, not cwd. Seeds are explicit UUIDs."""
     raw = json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=_object,
                      parse_float=_reject_number, parse_constant=_reject_number)
-    raw = _keys(raw, {'version', 'application_revision', 'person', 'corpora'})
+    raw = _keys(raw, {'version', 'application_revision', 'person', 'corpora'}, {'alten_resolutions'})
     if type(raw['version']) is not int or raw['version'] != 1:
         raise BuildError('Unsupported build configuration version; expected 1')
     p = _keys(raw['person'], {'seed', 'alias'})
@@ -119,7 +121,9 @@ def load_config(path: Path) -> BuildConfig:
             or len({c.corpus.label for c in corpora}) != len(corpora)):
         raise BuildError('Corpus seeds and names must be unique')
     return BuildConfig(person, tuple(sorted(corpora, key=lambda c: c.corpus.corpus_id)),
-                       _text(raw['application_revision']))
+                       _text(raw['application_revision']),
+                       (path.resolve().parent / _text(raw['alten_resolutions'])).resolve()
+                       if 'alten_resolutions' in raw else None)
 
 
 def build(config: BuildConfig, output: Path) -> BuildReport:
@@ -134,6 +138,10 @@ def build(config: BuildConfig, output: Path) -> BuildReport:
         raise BuildError('Output already exists; choose a new path')
     if not output.parent.is_dir() or not output.name:
         raise BuildError('Output parent must be an existing directory')
+    resolutions = (decode_resolutions(config.alten_resolutions.read_bytes())
+                   if config.alten_resolutions is not None else ())
+    if config.alten_resolutions is not None and not any(s.processor_kind == 'alten' for s in config.corpora):
+        raise BuildError('ALTEN resolutions require an ALTEN corpus')
     factory = ParserFactory()
     processors: dict[str, PDFProcessor] = {}
     bindings = []
@@ -166,7 +174,7 @@ def build(config: BuildConfig, output: Path) -> BuildReport:
                 raise BuildError('Expected complete schema v8; no database published', report)
             alten_ids = {s.corpus.corpus_id for s in config.corpora if s.processor_kind == 'alten'}
             finalize_alten(db.connection, result.run_id,
-                           tuple(b for b in bindings if b.corpus_id in alten_ids), sources)
+                           tuple(b for b in bindings if b.corpus_id in alten_ids), sources, resolutions)
         os.chmod(staged, 0o600)
         with staged.open('rb') as handle:
             os.fsync(handle.fileno())

@@ -37,12 +37,12 @@ def verify_schema(connection):
     return packaged_verify_schema(connection, load_migrations())
 
 
-def test_certified_alten_52_groups_78_versions_zero_candidates(tmp_path):
+def test_certified_alten_reviewed_inventory_zero_candidates(tmp_path):
     manifest_bytes = MANIFEST.read_bytes()
     manifest = json.loads(manifest_bytes)
     legacy_path = str(tmp_path / 'legacy.sqlite')
     result = run_ingestion(CORPUS, legacy_path)
-    assert (result.periods, result.versions, result.failed) == (52, 78, 0)
+    assert (result.periods, result.versions, result.failed) == (55, 82, 0)
     legacy = DatabaseService(legacy_path)
     periods = legacy.obtener_periodos_documentales()
     versions = legacy.obtener_versiones_documentales()
@@ -64,12 +64,12 @@ def test_certified_alten_52_groups_78_versions_zero_candidates(tmp_path):
             location = FileLocation(corpus.corpus_id, entry['filename'], file.file_id, entry['filename'])
             inventory.append((file, location))
         first = integrate_alten(repo, corpus.corpus_id, periods, versions, inventory)
-        assert len(first.document_ids) == 52
-        assert len(first.version_ids) == len(first.extraction_ids) == 78
-        assert len(first.assessment_ids) == 52
+        assert len(first.document_ids) == 55
+        assert len(first.version_ids) == len(first.extraction_ids) == 82
+        assert len(first.assessment_ids) == 55
         assert not select_candidates(repo).candidates
         assert db.connection.execute('SELECT count(*) FROM economic_observations').fetchone()[0] == 0
-        assert Counter(a.status for a in repo.list_assessments()) == {'pending': 27, 'ambiguous': 25}
+        assert Counter(a.status for a in repo.list_assessments()) == {'pending': 30, 'ambiguous': 25}
         by_key = {v['version_key']: v for v in versions}
         for identity in first.version_ids:
             version = repo.get_version(identity)

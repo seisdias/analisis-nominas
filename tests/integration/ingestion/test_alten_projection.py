@@ -260,3 +260,325 @@ def test_versions_on_different_pages_are_not_selected(snapshot, count):
     assert conn.execute('SELECT count(*) FROM document_versions').fetchone()[0] == count
     assert conn.execute('SELECT count(*) FROM economic_observations').fetchone()[0] == 0
     assert conn.execute('SELECT DISTINCT status FROM assessments').fetchall() == [('ambiguous',)]
+
+
+def test_explicit_resolution_projects_only_selected_version(snapshot):
+    """A reviewed version selection unlocks projection without deleting evidence."""
+    repo, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+    document = conn.execute(
+        'SELECT document_id FROM logical_documents'
+    ).fetchone()[0]
+    versions = repo.get_document_versions(document)
+    assert len(versions) == 2
+
+    from src.alten_resolutions import VersionResolution
+
+    resolution = VersionResolution(
+        document_id=document,
+        version_id=versions[1].version_id,
+        reason='Reviewed against independent payment evidence',
+        expected_version_ids=tuple(v.version_id for v in versions),
+    )
+    finalize_alten(
+        conn, result.run_id, bindings, sources,
+        resolutions=(resolution,),
+    )
+
+    assert conn.execute(
+        'SELECT count(*) FROM document_versions'
+    ).fetchone()[0] == 2
+    assert conn.execute(
+        'SELECT count(*) FROM economic_observations'
+    ).fetchone()[0] == 2
+    assert conn.execute(
+        'SELECT DISTINCT eligibility FROM economic_observations'
+    ).fetchall() == [('evidence_only',)]
+
+
+
+def test_unknown_resolution_document_blocks_projection(snapshot):
+    """A resolution for an unknown document must never be ignored."""
+    from src.alten_resolutions import VersionResolution
+
+    _, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+
+    before = CanonicalStateReader(conn).read()
+
+    resolution = VersionResolution(
+        document_id='unknown-document',
+        version_id='unknown-version',
+        reason='Synthetic invalid selection',
+        expected_version_ids=('unknown-version',),
+    )
+
+    with pytest.raises(ValueError, match='resolution'):
+        finalize_alten(
+            conn, result.run_id, bindings, sources,
+            resolutions=(resolution,),
+        )
+
+    assert CanonicalStateReader(conn).read() == before
+
+
+def test_conflicting_resolutions_block_projection(snapshot):
+    """Two selections for one document must fail without changing canonical state."""
+    from src.alten_resolutions import VersionResolution
+
+    _, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+
+    document_id = conn.execute(
+        'SELECT document_id FROM logical_documents LIMIT 1'
+    ).fetchone()[0]
+    version_ids = [
+        row[0]
+        for row in conn.execute(
+            'SELECT version_id FROM document_versions WHERE document_id = ? '
+            'ORDER BY version_id',
+            (document_id,),
+        )
+    ]
+    assert len(version_ids) == 2
+
+    resolutions = tuple(
+        VersionResolution(
+            document_id=document_id,
+            version_id=version_id,
+            reason='Synthetic conflicting selection',
+            expected_version_ids=tuple(version_ids),
+        )
+        for version_id in version_ids
+    )
+
+    before = CanonicalStateReader(conn).read()
+
+    with pytest.raises(ValueError, match='Multiple ALTEN resolutions'):
+        finalize_alten(
+            conn, result.run_id, bindings, sources,
+            resolutions=resolutions,
+        )
+
+    assert CanonicalStateReader(conn).read() == before
+
+
+def test_unavailable_resolution_version_blocks_projection(snapshot):
+    """A selection must reference a version belonging to its document."""
+    from src.alten_resolutions import VersionResolution
+
+    _, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+
+    document_id = conn.execute(
+        'SELECT document_id FROM logical_documents LIMIT 1'
+    ).fetchone()[0]
+
+    resolution = VersionResolution(
+        document_id=document_id,
+        version_id='sha256:nonexistent:page:1',
+        reason='Synthetic invalid version',
+        expected_version_ids=('sha256:nonexistent:page:1',),
+    )
+
+    before = CanonicalStateReader(conn).read()
+
+    with pytest.raises(ValueError, match='unavailable version'):
+        finalize_alten(
+            conn, result.run_id, bindings, sources,
+            resolutions=(resolution,),
+        )
+
+    assert CanonicalStateReader(conn).read() == before
+
+
+def test_resolution_rejects_stale_version_inventory(snapshot):
+    """A reviewed selection must reject a changed candidate-version set."""
+    from src.alten_resolutions import VersionResolution
+
+    _, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+
+    document_id = conn.execute(
+        'SELECT document_id FROM logical_documents LIMIT 1'
+    ).fetchone()[0]
+    version_ids = tuple(
+        row[0] for row in conn.execute(
+            'SELECT version_id FROM document_versions '
+            'WHERE document_id=? ORDER BY version_id',
+            (document_id,),
+        )
+    )
+    assert len(version_ids) == 2
+
+    resolution = VersionResolution(
+        document_id=document_id,
+        version_id=version_ids[0],
+        reason='Reviewed against independent payment evidence',
+        expected_version_ids=(version_ids[0],),
+    )
+
+    before = CanonicalStateReader(conn).read()
+
+    with pytest.raises(ValueError, match='stale|version inventory'):
+        finalize_alten(
+            conn, result.run_id, bindings, sources,
+            resolutions=(resolution,),
+        )
+
+    assert CanonicalStateReader(conn).read() == before
+
+
+def resolution_for(repo, conn):
+    from src.alten_resolutions import VersionResolution
+    document = conn.execute('SELECT document_id FROM logical_documents').fetchone()[0]
+    versions = repo.get_document_versions(document)
+    return VersionResolution(document, versions[0].version_id, 'Synthetic review',
+                             tuple(v.version_id for v in versions))
+
+
+def test_selection_replay_and_changed_decision_requires_rebuild(snapshot):
+    repo, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+    choice = resolution_for(repo, conn)
+    finalize_alten(conn, result.run_id, bindings, sources, (choice,))
+    before = CanonicalStateReader(conn).read(include_operational_metadata=True)
+    finalize_alten(conn, result.run_id, bindings, sources, (choice,))
+    assert CanonicalStateReader(conn).read(include_operational_metadata=True) == before
+    for changed in [replace(choice, reason='Changed review'),
+                    replace(choice, version_id=choice.expected_version_ids[1])]:
+        with pytest.raises(ValueError, match='rebuild'):
+            finalize_alten(conn, result.run_id, bindings, sources, (changed,))
+        assert CanonicalStateReader(conn).read(include_operational_metadata=True) == before
+    ext = conn.execute('SELECT extraction_id FROM extractions WHERE extractor_name=?', (NAME,)).fetchone()[0]
+    facts = {f.fact_key: f for f in repo.get_extraction_facts(ext)}
+    manifest = json.loads(facts['projection/manifest'].value.value)
+    assert manifest['resolution']['resolutions'][0]['version_id'] == choice.version_id
+    assert manifest['resolution']['resolutions'][0]['reason'] == choice.reason
+
+
+@pytest.mark.parametrize('mutation', ['extra', 'different', 'duplicate'])
+def test_inventory_variants_rollback(snapshot, mutation):
+    repo, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+    choice = resolution_for(repo, conn)
+    if mutation == 'extra':
+        choice = replace(choice, expected_version_ids=choice.expected_version_ids + ('other',))
+    elif mutation == 'different':
+        choice = replace(choice, expected_version_ids=(choice.version_id, 'other'))
+    before = CanonicalStateReader(conn).read()
+    with pytest.raises(ValueError):
+        finalize_alten(conn, result.run_id, bindings, sources,
+                       (choice, choice) if mutation == 'duplicate' else (choice,))
+    assert CanonicalStateReader(conn).read() == before
+
+
+@pytest.mark.parametrize('mutation', ['page', 'fingerprint', 'partial', 'old_revision'])
+def test_inconsistent_selected_support(snapshot, mutation):
+    repo, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+    choice = resolution_for(repo, conn)
+    if mutation in ('partial', 'old_revision'):
+        finalize_alten(conn, result.run_id, bindings, sources, (choice,))
+        if mutation == 'partial':
+            conn.execute("DELETE FROM documentary_facts WHERE fact_key='projection/manifest'")
+        else:
+            conn.execute("UPDATE extractions SET extractor_revision='alten-economic-projection/v1' WHERE extractor_name=?", (NAME,))
+    elif mutation == 'page':
+        conn.execute('DELETE FROM fact_pages WHERE fact_id IN (SELECT f.fact_id FROM documentary_facts f JOIN extractions e USING(extraction_id) WHERE e.version_id=?)', (choice.version_id,))
+    else:
+        conn.execute('UPDATE extractions SET content_hash=? WHERE version_id=?', ('a'*64, choice.version_id))
+    before = CanonicalStateReader(conn).read()
+    with pytest.raises(ValueError):
+        finalize_alten(conn, result.run_id, bindings, sources, (choice,))
+    assert CanonicalStateReader(conn).read() == before
+
+
+def test_builder_resolution_file_roundtrip_and_reproducibility(tmp_path, monkeypatch):
+    import src.canonical_build as module
+    from src.alten_resolutions import encode_resolutions
+    from src.canonical_build import BuildConfig, CorpusBuild, build
+    person = Person(person_id(), 'synthetic')
+    corpus = Corpus(corpus_id(), person.person_id, 'synthetic', 'synthetic/v1')
+    root = tmp_path/'inputs'
+    root.mkdir()
+    for n in range(2):
+        (root/f'{n}.pdf').write_bytes(str(n).encode())
+    monkeypatch.setattr(module, 'AltenProcessor', SyntheticAlten)
+    config = BuildConfig(person, (CorpusBuild(corpus, root, 'alten', None, ()),), 'synthetic/v1')
+    baseline = tmp_path/'baseline.sqlite'
+    build(config, baseline)
+    with open_database(baseline, mode='verify') as db:
+        choice = resolution_for(RelationRepository(db.connection), db.connection)
+    path = tmp_path/'resolutions.json'
+    path.write_bytes(encode_resolutions((choice,)))
+    config = replace(config, alten_resolutions=path)
+    a, b = tmp_path/'a.sqlite', tmp_path/'b.sqlite'
+    build(config, a)
+    build(config, b)
+    with open_database(a, mode='verify') as first, open_database(b, mode='verify') as second:
+        assert CanonicalStateReader(first.connection).read() == CanonicalStateReader(second.connection).read()
+        assert first.connection.execute('SELECT count(*) FROM economic_observations').fetchone()[0] == 2
+    path.write_bytes(encode_resolutions((replace(choice, expected_version_ids=(choice.version_id,)),)))
+    with pytest.raises(ValueError, match='inventory'):
+        build(config, tmp_path/'failed.sqlite')
+    assert not (tmp_path/'failed.sqlite').exists()
+    assert not list(tmp_path.glob('.canonical-build-*'))
+
+
+class TwoDocuments(SyntheticAlten):
+    def prepare(self, data, filename):
+        prepared = super().prepare(data, filename)
+        # Every physical file supplies two logical periods, each with two versions.
+        period = {k: v.replace('2025-01', '2025-03') if isinstance(v, str) else v
+                  for k, v in prepared.periods[0].items()}
+        version = {k: v.replace('2025-01', '2025-03') if isinstance(v, str) else v
+                   for k, v in prepared.versions[0].items()}
+        version['page_number'] = 2
+        version['version_key'] = version['version_key'].replace(':page:1', ':page:2')
+        return AltenPDF(2, prepared.periods + (period,), prepared.versions + (version,))
+
+
+@pytest.mark.parametrize('case', ['incomplete', 'foreign_version', 'late_error'])
+def test_two_document_atomic_validation(snapshot, case):
+    from src.alten_resolutions import VersionResolution
+    repo, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2, processor=TwoDocuments())
+    documents = [d for (d,) in conn.execute('SELECT document_id FROM logical_documents ORDER BY document_id')]
+    choices = []
+    for doc in documents:
+        versions = tuple(v.version_id for v in repo.get_document_versions(doc))
+        choices.append(VersionResolution(doc, versions[0], 'Reviewed', versions))
+    if case == 'incomplete':
+        choices.pop()
+    elif case == 'foreign_version':
+        choices[1] = replace(choices[1], version_id=choices[0].version_id,
+                             expected_version_ids=(choices[0].version_id,))
+    else:
+        conn.execute('UPDATE extractions SET content_hash=? WHERE version_id=?', ('a'*64, choices[1].version_id))
+    before = CanonicalStateReader(conn).read()
+    with pytest.raises(ValueError):
+        finalize_alten(conn, result.run_id, bindings, sources, tuple(choices))
+    assert CanonicalStateReader(conn).read() == before
+    assert conn.execute('SELECT count(*) FROM economic_observations').fetchone()[0] == 0
+
+
+def test_resolution_cannot_cross_configured_corpus(snapshot):
+    from src.alten_resolutions import VersionResolution
+    from src.canonical.documents import DocumentVersion, LogicalDocument, document_id, version_id
+    repo, conn, bindings, _ = snapshot
+    result, sources, _ = prepare(snapshot, count=2)
+    person = Person(person_id(), 'other')
+    corpus = Corpus(corpus_id(), person.person_id, 'other', 'synthetic/v1')
+    repo.register_person(person)
+    repo.register_corpus(corpus)
+    doc = LogicalDocument(document_id(corpus.corpus_id, 'other'), corpus.corpus_id, None, 'payroll', 'other')
+    repo.register_document(doc)
+    file_id = conn.execute('SELECT file_id FROM source_files LIMIT 1').fetchone()[0]
+    version = DocumentVersion(version_id(doc.document_id, file_id, 'page:1'), doc.document_id, file_id, 'page:1')
+    repo.register_version(version)
+    choice = VersionResolution(doc.document_id, version.version_id, 'Reviewed', (version.version_id,))
+    before = CanonicalStateReader(conn).read()
+    with pytest.raises(ValueError, match='unknown document'):
+        finalize_alten(conn, result.run_id, bindings, sources, (choice,))
+    assert CanonicalStateReader(conn).read() == before

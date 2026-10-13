@@ -14,27 +14,31 @@ from src.parsers.parser_factory import ParserFactory
 from src.persistence import open_database, verify_schema
 from src.persistence.decisions import DecisionRepository
 from src.persistence.state import CanonicalStateReader
+from tests.private.test_alten_parser import MANIFEST as ALTEN_MANIFEST
 
 ROOT = Path(__file__).resolve().parents[2]
 NAMES = ('coritel', 'insis4', 'ineco', 'exceltic', 'altran', 'alten')
 EXPECTED = {'coritel': {'processed': 17}, 'insis4': {'processed': 23, 'skipped': 2},
             'ineco': {'processed': 60, 'skipped': 1}, 'exceltic': {'processed': 8},
-            'altran': {'processed': 73, 'skipped': 5}, 'alten': {'processed': 52, 'skipped': 3}}
+            'altran': {'processed': 73, 'skipped': 5}, 'alten': {'processed': 56, 'skipped': 3}}
 
 
+# Reviewed oracle delta: 4 source versions, 3 logical documents, 28 concept rows.
+# Each version adds 33 payload leaves + 6 provenance facts; each concept adds 11
+# leaves. Thus +464 documentary facts and +440 page-supported facts.
 EXPECTED_SOURCE_COUNTS = {
-    'assessments': 259, 'corpora': 6, 'document_relations': 0, 'document_versions': 259,
-    'documentary_facts': 36470, 'economic_observations': 362, 'employers': 0,
-    'extractions': 259, 'fact_pages': 35969, 'file_locations': 244, 'ingest_items': 244,
-    'ingest_runs': 1, 'logical_documents': 233, 'manual_decisions': 0,
+    'assessments': 263, 'corpora': 6, 'document_relations': 0, 'document_versions': 263,
+    'documentary_facts': 36934, 'economic_observations': 362, 'employers': 0,
+    'extractions': 263, 'fact_pages': 36409, 'file_locations': 248, 'ingest_items': 248,
+    'ingest_runs': 1, 'logical_documents': 236, 'manual_decisions': 0,
     'observation_facts': 362, 'observation_relations': 0, 'persons': 1, 'rules': 2,
-    'schema_migrations': 8, 'source_files': 242, 'version_pages': 260,
+    'schema_migrations': 8, 'source_files': 246, 'version_pages': 264,
 }
 HISTORICAL_V7_FINGERPRINT = '9e12297442f73805abf7207144363d44b51c6d2c5c1e9b9b516e303d2797387f'
 
 
 def test_global_two_builds_and_identical_replay(tmp_path):
-    manifest_bytes = {name: (ROOT/'data/private'/f'{name}-manifest.json').read_bytes()
+    manifest_bytes = {name: (ALTEN_MANIFEST if name == 'alten' else ROOT/'data/private'/f'{name}-manifest.json').read_bytes()
                       for name in NAMES if name != 'coritel'}
     manifests = {name: json.loads(data) for name, data in manifest_bytes.items()}
     decisions = encode_decisions(())  # No invented human decisions about real evidence.
@@ -56,7 +60,7 @@ def test_global_two_builds_and_identical_replay(tmp_path):
                 corpora[name] = corpus.corpus_id
                 bindings.append(CorpusInput(corpus.corpus_id, ROOT/'data/test'/name, name))
             sources = inventory(bindings)
-            assert len(sources) == 244
+            assert len(sources) == 248
             certificates = {e['filename'] for e in manifests['altran']['certificates']}
             sources = tuple(replace(s, skip_reason='annual_certificate') if s.corpus_id == corpora['altran']
                             and s.relative_path in certificates else s for s in sources)
@@ -69,7 +73,7 @@ def test_global_two_builds_and_identical_replay(tmp_path):
                 bindings.reverse()
                 sources = tuple(reversed(sources))
             result = ingest(repo, bindings, processors, sources=sources)
-            assert (result.processed, result.skipped, result.failed) == (233, 11, 0)
+            assert (result.processed, result.skipped, result.failed) == (237, 11, 0)
             import_decisions(repo, decisions)
             counts = {name: dict(db.connection.execute(
                 'SELECT status,count(*) FROM ingest_items WHERE corpus_id=? GROUP BY status',
@@ -88,7 +92,7 @@ def test_global_two_builds_and_identical_replay(tmp_path):
                 'SELECT document_id FROM logical_documents WHERE corpus_id=? ORDER BY document_id', (corpora['alten'],)))
             versions = tuple(r[0] for r in db.connection.execute(
                 'SELECT version_id FROM document_versions JOIN logical_documents USING(document_id) WHERE corpus_id=? ORDER BY version_id', (corpora['alten'],)))
-            assert len(groups) == 52 and len(versions) == 78
+            assert len(groups) == 55 and len(versions) == 82
             alten_identities.append((groups, versions))
             assert not select_candidates(repo).candidates
             assert db.connection.execute(
@@ -128,7 +132,7 @@ def test_global_two_builds_and_identical_replay(tmp_path):
     assert alten_identities[0] == alten_identities[1]
     assert classifications[0] == classifications[1]
     for name, original in manifest_bytes.items():
-        assert (ROOT/'data/private'/f'{name}-manifest.json').read_bytes() == original
+        assert (ALTEN_MANIFEST if name == 'alten' else ROOT/'data/private'/f'{name}-manifest.json').read_bytes() == original
     print('Global logical fingerprint:', snapshots[0].fingerprint)
     print('Canonical table counts:', dict(snapshots[0].table_counts))
-    print('Build A = replay A = build B; 244 PDFs / 233 processed / 11 skipped / 0 failed; ALTEN 52/78/0')
+    print('Build A = replay A = build B; 248 PDFs / 237 processed / 11 skipped / 0 failed; ALTEN 55/82/0')

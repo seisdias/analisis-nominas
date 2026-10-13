@@ -221,3 +221,23 @@ def test_builder_result_can_be_read_by_inspector(config, tmp_path):
     assert result.exit_code == 0, result.output
     assert 'logical_documents: 1' in result.output
     assert output.read_bytes() == before
+
+
+@pytest.mark.parametrize('payload', ['{', '{"contract":"alten-version-resolutions","version":2,"resolutions":[]}',
+                                    '{"contract":"alten-version-resolutions","version":1,"resolutions":[],"extra":true}'])
+def test_invalid_resolution_file_not_published(config, tmp_path, payload):
+    path, data = config
+    data['alten_resolutions'] = 'resolutions.json'
+    path.write_text(json.dumps(data))
+    (tmp_path/'resolutions.json').write_text(payload)
+    assert run(path, tmp_path/'invalid.sqlite').exit_code != 0
+    assert not (tmp_path/'invalid.sqlite').exists()
+    assert not list(tmp_path.glob('.canonical-build-*'))
+
+
+def test_resolution_path_relative_to_configuration(config, tmp_path):
+    from src.canonical_build import load_config
+    path, data = config
+    data['alten_resolutions'] = 'resolutions.json'
+    path.write_text(json.dumps(data))
+    assert load_config(path).alten_resolutions == (tmp_path/'resolutions.json').resolve()
