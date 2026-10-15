@@ -49,3 +49,6 @@ logs/
 
 # Datos locales y privados
 /data/
+
+# Configuración local de la CLI
+/config.toml

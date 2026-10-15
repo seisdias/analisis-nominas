@@ -161,3 +161,52 @@ Construir siempre con un destino nuevo mediante `python -m src.canonical_builder
 siendo atómica y sin sobrescritura. La reproducibilidad se compara con
 `CanonicalStateReader` (estado lógico, excluyendo marcas temporales operativas),
 no mediante igualdad binaria de los archivos SQLite.
+
+## CLI v0.1 (solo lectura)
+
+Desde el entorno Python existente (Click ya está incluido):
+
+```sh
+source venv/bin/activate
+cp config.example.toml config.toml
+# Edita config.toml para apuntar a una base canónica v8 existente.
+./nominas empresas
+./nominas listar --empresa "ALTEN DELIVERY CENTER SPAIN SLU" --anio 2025
+./nominas ver --empresa "ALTEN DELIVERY CENTER SPAIN SLU" --anio 2025 --mes 1
+./nominas estado
+./nominas config
+```
+
+Para usar `nominas` sin `./`, añade la raíz del repositorio a `PATH`.
+También se admite `python -m src.cli` desde la raíz. El ejecutable puede
+invocarse por su ruta absoluta desde cualquier directorio con el entorno activo.
+No requiere instalar el repositorio como paquete.
+
+`config.toml` es local y está ignorado por Git. En `[paths]`, `database` es
+obligatorio salvo que exista `ANALISIS_NOMINAS_CANONICAL_DB`, que tiene prioridad.
+`payroll_directory` es opcional e informativo. Todas las rutas relativas, también
+las de la variable de entorno, se resuelven desde la raíz del repositorio.
+La GUI conserva su configuración actual mediante la variable de entorno; no se
+ha cambiado su comportamiento para leer TOML.
+
+Las consultas exigen una base v8 existente con journal DELETE y verifican
+integridad y claves foráneas. No crean, migran ni reparan bases. WAL se rechaza
+para evitar la creación de archivos auxiliares. `config` solo muestra la
+configuración resuelta, sin abrir la base; sus rutas completas pueden ser privadas.
+Los demás comandos omiten rutas completas y datos personales.
+
+Los filtros utilizan denominaciones y periodos documentales concordantes, sin
+inferir identidad empresarial. `listar` admite filtros opcionales; `ver` exige
+empresa, año y mes y conserva todos los documentos coincidentes. No selecciona
+una versión ni muestra contenido personal del PDF. Los importes no certificados,
+ambiguos o sin observación se indican explícitamente, sin mostrar un valor.
+Una divisa ausente se indica como «divisa no documentada». La certificación de
+un valor no permite sumarlo: no hay agregaciones ni cambios de `evidence_only`.
+
+Validación dirigida:
+
+```sh
+venv/bin/pytest -q tests/integration/persistence/test_nominas_cli.py tests/integration/persistence/test_canonical_inspector.py
+venv/bin/ruff check .
+venv/bin/mypy
+```
