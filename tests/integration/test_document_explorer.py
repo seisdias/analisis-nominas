@@ -27,6 +27,12 @@ from src.persistence.economics import EconomicRepository
 APP = Path(__file__).resolve().parents[2] / 'app.py'
 
 
+@pytest.fixture(autouse=True)
+def isolated_configuration(tmp_path, monkeypatch):
+    monkeypatch.setattr('src.cli_config.REPOSITORY_ROOT', tmp_path)
+    monkeypatch.delenv('ANALISIS_NOMINAS_CANONICAL_DB', raising=False)
+
+
 @pytest.fixture
 def database(tmp_path, monkeypatch):
     path = tmp_path / 'synthetic.sqlite'
@@ -291,3 +297,69 @@ def test_different_documents_same_period_remain_visible(database, monkeypatch):
     assert len(table) == 5
     assert table['Identificador'].nunique() == 5
     assert app.metric[0].value == '5'
+
+
+def test_gui_uses_shared_toml_and_read_only_connection(database, monkeypatch, tmp_path):
+    import sqlite3
+
+    from click.testing import CliRunner
+
+    from src.cli import cli
+    from src.cli_config import load_config
+    monkeypatch.delenv('ANALISIS_NOMINAS_CANONICAL_DB')
+    (tmp_path / 'config.toml').write_text(
+        '[paths]\ndatabase="synthetic.sqlite"\npayroll_directory="documents"\n')
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    before = database.read_bytes()
+    files = set(tmp_path.iterdir())
+    original = CanonicalInspector.companies
+    def checked(self):
+        assert self._connection.execute('PRAGMA query_only').fetchone() == (1,)
+        with pytest.raises(sqlite3.OperationalError, match='readonly'):
+            self._connection.execute('CREATE TABLE forbidden_write (id INTEGER)')
+        return original(self)
+    monkeypatch.setattr(CanonicalInspector, 'companies', checked)
+    app = screen()
+    assert app.dataframe
+    assert any('SQLite accesible' in item.value for item in app.success)
+    diagnostic = next(e for e in app.expander if e.label == 'Configuración y diagnóstico')
+    texts = '\n'.join(item.value for item in diagnostic.text)
+    assert str(load_config().database) in texts
+    assert 'config.toml' in texts
+    assert str(tmp_path / 'documents') in texts
+    cli_result = CliRunner().invoke(cli, ['config'])
+    assert cli_result.exit_code == 0
+    assert str(load_config().database) in cli_result.output
+    assert database.read_bytes() == before
+    assert set(tmp_path.iterdir()) == files
+
+
+def test_gui_environment_overrides_toml(database, tmp_path):
+    (tmp_path / 'config.toml').write_text('[paths]\ndatabase="missing.sqlite"\n')
+    app = screen()
+    assert app.dataframe
+    assert any('ANALISIS_NOMINAS_CANONICAL_DB' in item.value for item in app.text)
+
+
+def test_gui_invalid_toml(tmp_path):
+    (tmp_path / 'config.toml').write_text('[invalid SENSITIVE_CONFIG')
+    app = screen()
+    assert not app.dataframe
+    assert 'config.toml' in app.warning[0].value
+    assert 'SENSITIVE_CONFIG' not in app.warning[0].value
+
+
+def test_gui_inaccessible_database(database, monkeypatch, caplog):
+    original = Path.open
+    def denied(self, *args, **kwargs):
+        if self == database:
+            raise PermissionError('SENSITIVE_PATH')
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', denied)
+    app = screen()
+    assert not app.dataframe
+    assert 'No se pudo consultar' in app.error[0].value
+    assert 'SENSITIVE_PATH' not in app.error[0].value
+    assert 'SENSITIVE_PATH' not in caplog.text
