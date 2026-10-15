@@ -127,3 +127,21 @@ def test_config_optional_directory_and_environment_without_file(configured, monk
 def test_terminal_controls_escaped():
     from src.cli import _text
     assert _text('Company\n\x1b[31m') == r'Company\n\u001b[31m'
+
+
+@pytest.mark.parametrize('currency_code', [None, 'EUR', 'USD'])
+def test_functional_eur_preserves_documentary_evidence(currency_code):
+    from src.canonical.values import CurrencyCode, ExactDecimal
+    from src.cli import _amount
+    value = {'status': 'certified', 'amount': ExactDecimal(1321333, 2),
+             'currency': CurrencyCode(currency_code) if currency_code else None,
+             'eligibility': 'evidence_only'}
+    before = value.copy()
+    result = _amount(value)
+    if currency_code == 'USD':
+        assert result == 'Inconsistencia de divisa: USD (ámbito EUR; certificado)'
+        assert '13.213,33' not in result
+        assert '€' not in result
+    else:
+        assert result == '13.213,33 € (certificado)'
+    assert value == before

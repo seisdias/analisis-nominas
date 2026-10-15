@@ -200,7 +200,9 @@ inferir identidad empresarial. `listar` admite filtros opcionales; `ver` exige
 empresa, año y mes y conserva todos los documentos coincidentes. No selecciona
 una versión ni muestra contenido personal del PDF. Los importes no certificados,
 ambiguos o sin observación se indican explícitamente, sin mostrar un valor.
-Una divisa ausente se indica como «divisa no documentada». La certificación de
+EUR es la única moneda funcional admitida: moneda documental ausente o EUR
+se presenta con `€`, sin modificar la evidencia. Otras monedas explícitas muestran
+una incompatibilidad, sin reinterpretación ni conversión. La certificación de
 un valor no permite sumarlo: no hay agregaciones ni cambios de `evidence_only`.
 
 Validación dirigida:

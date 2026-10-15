@@ -42,12 +42,14 @@ def _amount(value: dict[str, Any]) -> str:
         reason = {'no_observation': 'sin observación', 'ambiguous': 'ambiguo',
                   'not_certified': 'certificación no superada'}.get(status, 'importe ausente')
         return f'No certificado ({reason})'
+    # EUR is functional presentation currency, never documentary evidence.
+    currency = value.get('currency')
+    if currency is not None and currency.code != 'EUR':
+        return f'Inconsistencia de divisa: {_text(currency.code)} (ámbito EUR; certificado)'
     amount = value['amount']
     number = format(amount.to_decimal(), f',.{max(2, amount.scale)}f')
     number = number.translate(str.maketrans(',.', '.,'))
-    currency = value.get('currency')
-    unit = _text(currency.code) if currency is not None else 'divisa no documentada'
-    return f'{number} ({unit}; certificado)'
+    return f'{number} € (certificado)'
 
 
 def _documents(company: str | None, year: int | None, month: int | None = None,
