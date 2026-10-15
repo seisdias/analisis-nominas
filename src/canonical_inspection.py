@@ -185,6 +185,40 @@ class CanonicalInspector:
             result.append(row)
         return result
 
+    def timeline_records(self) -> list[dict[str, Any]]:
+        """Documentary observations, including alternatives; never resolve or aggregate.
+
+        Reuse the explorer's context and uniqueness checks and the certification
+        contract. A resolved version already materialized by ingestion is used
+        through its observation; no GUI-specific version selection is introduced.
+        """
+        result = []
+        for row in self.documents():
+            identity = row['document_id']
+            versions = tuple(v.version_id for v in self._repo.get_document_versions(identity))
+            for field, series, magnitude in (('gross', 'Bruto', 'documentary_gross'),
+                                              ('net', 'Neto', 'documentary_net')):
+                base = {key: row[key] for key in ('document_id', 'company_text', 'year', 'month')}
+                base.update(series=series, version_ids=versions, document_status=row[field]['status'])
+                ids = [r[0] for r in self._connection.execute(
+                    'SELECT o.observation_id FROM economic_observations o JOIN assessments a '
+                    'USING(assessment_id) WHERE a.document_id=? AND o.magnitude=? ORDER BY o.observation_id',
+                    (identity, magnitude))]
+                if not ids:
+                    result.append(dict(base, observation_id=None, source_version_ids=(),
+                                       eligibility=None, value=row[field]))
+                for observation_id in ids:
+                    detail = self.explain(observation_id, CertificationRequirements())
+                    observation = detail['observation']
+                    certified = detail['certification']['status'] == 'certified'
+                    value = {'status': 'certified' if certified else 'not_certified',
+                             'amount': observation.value.value if certified else None,
+                             'currency': observation.value.currency}
+                    result.append(dict(base, observation_id=observation_id,
+                        source_version_ids=tuple(v['version'].version_id for v in detail['versions']),
+                        eligibility=observation.eligibility, value=value))
+        return result
+
     def coverage(self) -> dict[str, Any]:
         """Structural coverage in this read snapshot, never economic inclusion."""
         rows = self._connection.execute(
