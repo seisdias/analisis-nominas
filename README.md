@@ -67,6 +67,30 @@ No se almacenan resultados en caché.
 La consulta recorre el conjunto documental, sin paginación de servidor; está
 pensada para corpus locales.
 
+### Evolución histórica documental
+
+La navegación lateral incluye «Evolución histórica». Consulta la misma SQLite y
+configuración compartida que el explorador, exclusivamente en lectura. Permite
+filtrar empresa documental exacta, intervalo de años desde 2006 y series bruto/neto.
+El extremo temporal corresponde al último periodo documental disponible.
+
+«Evolución documental, no agregación certificada»: cada punto corresponde a una
+observación certificada, sin sumas ni promedios y sin alterar `evidence_only`.
+Las empresas se distinguen por color y las series por el trazo. Las líneas solo
+unen meses consecutivos con datos representables; los huecos no se rellenan con
+ceros ni se interpolan. La gráfica permite zoom, desplazamiento y consulta de
+identificadores e importes exactos al pasar el cursor.
+
+Si varios documentos o candidatos coinciden en empresa y mes, el periodo se marca
+como ambiguo y no se representa una cifra mensual única. Las observaciones de
+versiones ya resueltas se recuperan mediante las consultas y certificación
+existentes; la pantalla no resuelve versiones. La tabla conserva cada observación
+por separado, los estados sin observación y los identificadores de documento,
+observación y versiones. Los documentos con año desconocido permanecen en ella
+al filtrar años. Las divisas explícitas distintas de EUR generan una advertencia
+y no se dibujan como euros. El eje gráfico usa aproximación numérica; la tabla y
+los tooltips conservan el importe exacto con formato español.
+
 Para la persistencia legacy, `python -m scripts.init_db` crea únicamente el esquema,
 sin datos. La base predeterminada
 es `data/runtime/nominas.sqlite`; para otra ruta: `python -m scripts.init_db --db RUTA`.
