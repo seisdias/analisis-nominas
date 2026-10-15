@@ -33,14 +33,18 @@ para reconstrucción, revisiones y certificación. No hay KPIs salariales nuevos
 python3.14 -m venv venv
 source venv/bin/activate
 python -m pip install -r requirements-dev.txt
-ANALISIS_NOMINAS_CANONICAL_DB=/ruta/absoluta/canonica.sqlite \
-  streamlit run app.py --server.address 127.0.0.1
+cp config.example.toml config.toml
+# Edita paths.database para apuntar a tu SQLite canónica existente.
+venv/bin/python -m streamlit run app.py --server.address 127.0.0.1
 ```
 
 La interfaz requiere una base canónica existente (esquema v8, journal DELETE),
 preparada mediante el [constructor canónico](examples/canonical-build.md). Abre
-[http://localhost:8501](http://localhost:8501). No crea ni migra bases. La ruta se indica exclusivamente
-mediante `ANALISIS_NOMINAS_CANONICAL_DB`; no se usa la base legacy como alternativa.
+[http://localhost:8501](http://localhost:8501). No crea ni migra bases. CLI y GUI comparten `config.toml`; `ANALISIS_NOMINAS_CANONICAL_DB` sigue disponible
+y tiene prioridad. No se usa la base legacy como alternativa. La sección
+«Configuración y diagnóstico» muestra la ruta efectiva, su procedencia, el
+directorio documental y el resultado de la apertura en solo lectura. Las rutas
+se muestran únicamente en ese diagnóstico y no se registran en logs.
 
 La pantalla permite seleccionar empresa documental exacta, año y mes. «Todas las empresas» incluye documentos con empresa
 ausente o ambigua. Bruto y neto conservan su certificación independiente: los
@@ -186,8 +190,15 @@ No requiere instalar el repositorio como paquete.
 obligatorio salvo que exista `ANALISIS_NOMINAS_CANONICAL_DB`, que tiene prioridad.
 `payroll_directory` es opcional e informativo. Todas las rutas relativas, también
 las de la variable de entorno, se resuelven desde la raíz del repositorio.
-La GUI conserva su configuración actual mediante la variable de entorno; no se
-ha cambiado su comportamiento para leer TOML.
+CLI y GUI usan el mismo lector (`src/cli_config.py`, conservado por compatibilidad).
+La precedencia es: argumentos explícitos del lector, variable de entorno,
+`config.toml` y valores por defecto. Los comandos actuales no añaden argumentos
+de rutas: los argumentos opcionales son del API Python `load_config`.
+La variable compatible solo afecta a la base; el directorio documental procede
+del TOML (o de un argumento explícito) y por defecto no está configurado.
+No hay base predeterminada: su ausencia produce un error comprensible.
+Un TOML ilegible o mal formado se informa incluso si existe una variable de entorno;
+no se ignora silenciosamente. No se modifica ni guarda configuración desde la GUI.
 
 Las consultas exigen una base v8 existente con journal DELETE y verifican
 integridad y claves foráneas. No crean, migran ni reparan bases. WAL se rechaza

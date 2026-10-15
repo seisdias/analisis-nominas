@@ -1,7 +1,9 @@
+# Configuración compartida CLI + GUI.
 # Copiar a config.toml (local, ignorado por Git).
 # Rutas relativas a la raíz del repositorio, incluso al ejecutar desde otro directorio.
 # ANALISIS_NOMINAS_CANONICAL_DB tiene prioridad sobre paths.database.
 [paths]
 database = "data/private/canonical-candidate-a3-v2.sqlite"
-# Opcional e informativo: la CLI no lee ni importa documentos.
+# Sin database ni variable de entorno no se selecciona ninguna base por defecto.
+# Opcional e informativo: CLI y GUI no leen ni importan documentos.
 # payroll_directory = "data/private/nominas"

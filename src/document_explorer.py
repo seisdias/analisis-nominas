@@ -1,13 +1,12 @@
 """Presentation of canonical inspection results; no economic policy or storage writes."""
 
-import os
 from hashlib import sha256
-from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
 from src.canonical_inspection import InspectionError, open_inspector
+from src.cli_config import ConfigurationError, load_config
 
 # Application scope only; never persisted as documentary currency.
 PRESENTATION_CURRENCY = 'EUR'
@@ -79,20 +78,25 @@ def render_app() -> None:
     st.title('Análisis de Nóminas')
     st.caption('Explorador documental')
     st.badge(f'Ámbito {PRESENTATION_CURRENCY}', color='blue')
-    path_text = os.environ.get('ANALISIS_NOMINAS_CANONICAL_DB', '')
-    if not path_text:
-        st.warning('Base de datos no configurada. Define ANALISIS_NOMINAS_CANONICAL_DB '
-                   'con la ruta de una base canónica existente y vuelve a iniciar la aplicación.')
-        return
-    path = Path(path_text).expanduser()
-    if not path.is_file():
-        st.error('Base de datos no disponible. Comprueba la ruta y los permisos de acceso. '
-                 'La aplicación no crea bases de datos.')
-        return
+    with st.expander('Configuración y diagnóstico'):
+        try:
+            config = load_config()
+        except ConfigurationError as error:
+            st.warning(f'Base de datos no configurada o configuración inválida. {error}')
+            return
+        # Explicit diagnostic section only; never log paths or raw exceptions.
+        st.text(f'Base SQLite efectiva: {config.database}')
+        st.text(f'Procedencia de la base: {config.source}')
+        st.text(f'Directorio documental: {config.payroll_directory or "No configurado"}')
+        st.caption('El directorio documental es informativo; no se leen ni modifican PDF. '
+                   'Las rutas relativas se resuelven desde la raíz del repositorio.')
+        access_status = st.empty()
 
     try:
         # One fresh read-only snapshot per rerun; no cache of private payroll data.
-        with open_inspector(path) as inspector:
+        with open_inspector(config.database) as inspector:
+            access_status.success('SQLite accesible en solo lectura. Esquema v8, integridad y '
+                                  'claves foráneas verificados.')
             companies = inspector.companies()
             with st.container(border=True):
                 company_filter, year_filter, month_filter = st.columns([3, 1, 1])
@@ -119,6 +123,8 @@ def render_app() -> None:
                     return
             rows = ordered_documents(inspector.documents(company=company, year=year, month=month))
     except InspectionError:
+        access_status.error('No se pudo consultar la base de datos: comprueba la ruta, permisos, '
+                            'esquema v8 y journal DELETE. No se crea ni migra ninguna base.')
         st.error('No se pudo consultar la base de datos. Comprueba el acceso, que sea canónica '
                  'v8 y que use journal DELETE. No se ha creado ni migrado ninguna base.')
         return

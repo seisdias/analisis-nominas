@@ -145,3 +145,31 @@ def test_functional_eur_preserves_documentary_evidence(currency_code):
     else:
         assert result == '13.213,33 € (certificado)'
     assert value == before
+
+
+def test_cli_connection_is_read_only(configured, monkeypatch):
+    from src.canonical_inspection import CanonicalInspector
+    original = CanonicalInspector.summary
+    def checked(self):
+        assert self._connection.execute('PRAGMA query_only').fetchone() == (1,)
+        with pytest.raises(sqlite3.OperationalError, match='readonly'):
+            self._connection.execute('CREATE TABLE forbidden_write (id INTEGER)')
+        return original(self)
+    monkeypatch.setattr(CanonicalInspector, 'summary', checked)
+    before = configured.read_bytes()
+    assert CliRunner().invoke(cli, ['estado']).exit_code == 0
+    assert configured.read_bytes() == before
+
+
+def test_cli_inaccessible_database(configured, monkeypatch):
+    from pathlib import Path
+    original = Path.open
+    def denied(self, *args, **kwargs):
+        if self == configured:
+            raise PermissionError('SENSITIVE_PATH')
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', denied)
+    result = CliRunner().invoke(cli, ['estado'])
+    assert result.exit_code != 0
+    assert 'No se pudo consultar la base' in result.output
+    assert 'SENSITIVE_PATH' not in result.output
