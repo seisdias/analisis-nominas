@@ -124,3 +124,39 @@ def test_existing_navigation_keeps_explorer_and_adds_timeline(database):
     assert app.title[0].value == 'Análisis de Nóminas'
     labels = [getattr(link, 'label', None) for link in app.get('page_link')]
     assert 'Explorador' in labels and 'Evolución histórica' in labels
+
+
+def test_optional_average_keeps_original_chart_and_table(database):
+    app = page()
+    original = app.get('vega_lite_chart')[0].proto.spec
+    table = app.dataframe[0].value.copy()
+    assert not app.checkbox[0].value
+    app.checkbox[0].check().run()
+    assert not app.exception
+    assert any('0 puntos' in item.value for item in app.info)
+    assert any('No constituye salario certificado' in item.value for item in app.caption)
+    assert app.dataframe[0].value.equals(table)
+    app.checkbox[0].uncheck().run()
+    assert app.get('vega_lite_chart')[0].proto.spec == original
+
+
+def test_average_visible_with_legend_and_unchanged_documentary_points(database, monkeypatch):
+    from src.payroll_timeline import moving_average
+    from tests.unit.test_payroll_timeline import year_records
+
+    rows = year_records()
+    monkeypatch.setattr('src.canonical_inspection.CanonicalInspector.timeline_records', lambda self: rows)
+    app = page()
+    table = app.dataframe[0].value.copy()
+    app.checkbox[0].check().run()
+    assert not app.exception
+    assert any('2 puntos' in item.value for item in app.info)
+    assert app.dataframe[0].value.equals(table)
+    points = prepare_timeline(rows, years=(2025, 2025)).points
+    reference = moving_average(points, rows)
+    spec = timeline_chart(points, '2025-01-01', '2025-12-01', reference).to_dict()
+    assert spec['data']['values'][:24] == points
+    assert len(spec['data']['values']) == 26
+    assert spec['encoding']['strokeDash']['field'] == 'Serie'
+    assert 'strokeWidth' in spec['encoding']
+    assert 'transform' not in spec

@@ -1,6 +1,7 @@
 """Read-only timeline presentation; individual certified observations, never totals."""
 from collections import defaultdict
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import altair as alt
@@ -79,9 +80,48 @@ def prepare_timeline(records: list[dict[str, Any]], *, years: tuple[int, int],
     return Timeline(points, table, len(ambiguous))
 
 
-def timeline_chart(points: list[dict[str, Any]], start: str, end: str) -> alt.Chart:
+def moving_average(points: list[dict[str, Any]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Trailing twelve actual months, per company/series, using exact source amounts.
+
+    B.2 guards supply unique certified points. Incomplete context conservatively
+    blocks any window it could belong to, even when no month can be plotted.
+    The result is presentation-only and carries no documentary certification.
+    """
+    amounts = {r['observation_id']: r['value'].get('amount') for r in records}
+    incomplete = [r for r in records if any(r[k] is None for k in ('company_text', 'year', 'month'))]
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for point in points:
+        groups[(point['Empresa'], point['Serie'])].append(point)
+    result = []
+    for (company, series), group in sorted(groups.items()):
+        group.sort(key=lambda p: p['Fecha'])
+        previous, segment = -1, 0
+        for end in range(11, len(group)):
+            window = group[end - 11:end + 1]
+            dates = [(int(p['Fecha'][:4]), int(p['Fecha'][5:7])) for p in window]
+            indices = [year * 12 + month for year, month in dates]
+            if any(b != a + 1 for a, b in zip(indices, indices[1:])):
+                continue
+            if any((r['company_text'] is None or r['company_text'] == company)
+                   and any((r['year'] is None or r['year'] == year)
+                           and (r['month'] is None or r['month'] == month) for year, month in dates)
+                   for r in incomplete):
+                continue
+            mean = sum((amounts[p['Observación']].to_decimal() for p in window), Decimal(0)) / 12
+            segment += indices[-1] != previous + 1
+            previous = indices[-1]
+            display = f'{mean:,.2f}'.translate(str.maketrans(',.', '.,')) + ' € (media orientativa)'
+            result.append({'Fecha': window[-1]['Fecha'], 'Empresa': company,
+                           'Serie': f'{series} · Media móvil de 12 meses', 'Importe': float(mean),
+                           'Importe exacto': display, 'Documento': '', 'Observación': '',
+                           'Tramo': str(segment), 'Referencia': True})
+    return result
+
+
+def timeline_chart(points: list[dict[str, Any]], start: str, end: str,
+                   averages: list[dict[str, Any]] | None = None) -> alt.Chart:
     """Separate companies, series and contiguous runs; no aggregate transforms."""
-    return alt.Chart(alt.Data(values=points)).mark_line(point=True).encode(
+    chart = alt.Chart(alt.Data(values=points + averages if averages else points)).mark_line(point=True).encode(
         x=alt.X('Fecha:T', title='Periodo documental (mes)',
                 scale=alt.Scale(domain=[start, end]), axis=alt.Axis(format='%m/%Y')),
         y=alt.Y('Importe:Q', title='Importe documental (€)', scale=alt.Scale(zero=False)),
@@ -90,6 +130,9 @@ def timeline_chart(points: list[dict[str, Any]], start: str, end: str) -> alt.Ch
         detail=alt.Detail('Tramo:N'),
         tooltip=[alt.Tooltip('Fecha:T', format='%m/%Y'), 'Empresa:N', 'Serie:N', 'Importe exacto:N', 'Documento:N', 'Observación:N'],
     ).properties(height=400).interactive()
+    if averages:
+        chart = chart.encode(strokeWidth=alt.condition('datum.Referencia === true', alt.value(3), alt.value(1)))
+    return chart
 
 
 def render_timeline() -> None:
@@ -118,8 +161,9 @@ def render_timeline() -> None:
                                format_func=lambda name: name or 'Todas las empresas', key='timeline_company')
         years = st.slider('Intervalo de años', START_YEAR, last_year, (START_YEAR, last_year)) if last_year > START_YEAR else (START_YEAR, START_YEAR)
         selected = st.multiselect('Series', SERIES, default=list(SERIES))
+        show_average = st.checkbox('Mostrar media móvil de 12 meses')
     result = prepare_timeline(records, years=years, company=company, series=tuple(selected))
-    st.caption('Solo valores documentales certificados. Sin sumas ni promedios. '
+    st.caption('Series originales: valores documentales certificados, sin sumas ni promedios. '
                'Los meses sin puntos no equivalen a cero; las líneas se interrumpen en los huecos. '
                'La tabla conserva los importes exactos; el eje gráfico usa aproximación numérica.')
     if result.ambiguous_periods:
@@ -128,9 +172,17 @@ def render_timeline() -> None:
         st.warning('Hay divisas incompatibles con EUR. Sus valores no se convierten ni se dibujan como euros.')
     if any('incompleto' in r['Representación'] for r in result.table):
         st.info('Los documentos con empresa o periodo incompleto permanecen en la tabla, aunque no puedan ubicarse en la gráfica.')
+    averages = moving_average(result.points, records) if show_average else []
+    if show_average:
+        st.caption('Media estadística orientativa basada en observaciones documentales. '
+                   'No constituye salario certificado. No equivale a una retribución mensual prorrateada.')
+        st.info(f'{len(averages)} puntos de media móvil disponibles. Se requieren 12 meses consecutivos válidos '
+                'de la misma empresa y serie dentro del intervalo seleccionado. Se omiten ventanas con huecos, '
+                'ambigüedades, importes no certificados o divisas incompatibles. Los registros con contexto '
+                'incompleto bloquean las ventanas a las que podrían pertenecer.')
     if result.points:
         end = f'{years[1]:04d}-{latest[1] if years[1] == latest[0] else 12:02d}-01'
-        st.altair_chart(timeline_chart(result.points, f'{years[0]:04d}-01-01', end), width='stretch')
+        st.altair_chart(timeline_chart(result.points, f'{years[0]:04d}-01-01', end, averages), width='stretch')
         st.caption(f'{len(result.points)} puntos documentales · {len(result.table)} registros de series en la tabla.')
     else:
         st.info('No hay puntos representables para los filtros seleccionados.')
