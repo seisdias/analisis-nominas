@@ -13,6 +13,7 @@ from src.canonical.certification import (
     DocumentarySupport,
     certify_observation,
 )
+from src.canonical.economics import ObservationEvidence
 from src.canonical.values import ExactDecimal
 from src.persistence import CanonicalSQLiteError, connect, verify_schema
 from src.persistence.economics import EconomicRepository
@@ -184,6 +185,14 @@ class CanonicalInspector:
                 row[field] = availability
             result.append(row)
         return result
+
+    def observations_for_document(self, document_id: str) -> tuple[ObservationEvidence, ...]:
+        """All persisted observations, once each, without selection or promotion."""
+        ids = self._connection.execute(
+            'SELECT o.observation_id FROM economic_observations o '
+            'JOIN assessments a ON a.assessment_id=o.assessment_id '
+            'WHERE a.document_id=? ORDER BY o.observation_id', (document_id,))
+        return tuple(_required(self._repo.get_observation(row[0]), 'Observation') for row in ids)
 
     def timeline_records(self) -> list[dict[str, Any]]:
         """Documentary observations, including alternatives; never resolve or aggregate.
