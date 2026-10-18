@@ -160,3 +160,50 @@ def test_average_visible_with_legend_and_unchanged_documentary_points(database, 
     assert spec['encoding']['strokeDash']['field'] == 'Serie'
     assert 'strokeWidth' in spec['encoding']
     assert 'transform' not in spec
+
+
+def test_friendly_table_full_traceability_categories_and_reset(database):
+    from src.gui_presentation import short_id
+    app = page()
+    table = app.dataframe[0].value
+    assert 'Observación' not in table and 'Elegibilidad' not in table
+    assert table.iloc[0]['Periodo'] == '03/2024'
+    assert '…' in table.iloc[0]['Documento']
+    assert any('Pagas de beneficios · Sin registros' == label for label in app.multiselect[1].options)
+    app.selectbox[1].select(0).run()
+    assert not app.exception
+    assert short_id(app.code[0].value) == table.iloc[0]['Documento']
+    assert any(item.value == 'a' * 64 for item in app.code)
+    app.multiselect[1].set_value(['Pagas extraordinarias']).run()
+    assert not app.get('vega_lite_chart')
+    assert any('No hay puntos' in item.value for item in app.info)
+    app.selectbox[0].select('Empresa Beta')
+    app.multiselect[0].set_value(['Neto'])
+    app.slider[0].set_range(2025, 2025).run()
+    assert app.multiselect[1].value == ['Pagas extraordinarias']
+    app.button[0].click().run()
+    assert app.selectbox[0].value is None
+    assert app.multiselect[0].value == ['Bruto', 'Neto']
+    assert app.multiselect[1].value == ['Documentos sin clasificar']
+    assert not app.checkbox[0].value
+    assert len(app.dataframe[0].value) == 10
+    assert not app.code
+
+
+def test_category_chart_has_only_ordinary_lines_and_isolated_markers():
+    from src.analytic_dataset import DocumentCategory as C
+    from src.payroll_timeline import category_chart, classified_timeline
+    from tests.unit.test_payroll_timeline import analytic, record
+    rows = [record(doc='one'), record(doc='extra', month=2), record(doc='three', month=3),
+            record(doc='benefit', month=4), record(doc='other', month=5)]
+    dataset = [analytic('one', C.ORDINARY), analytic('three', C.ORDINARY),
+               analytic('extra', C.EXTRA), analytic('benefit', C.BENEFITS), analytic('other', C.OTHER)]
+    result = classified_timeline(rows, dataset, years=(2025, 2025))
+    spec = category_chart(result.points, '2025-01-01', '2025-05-01', []).to_dict()
+    lines, markers, _ = spec['layer']
+    assert lines['mark']['type'] == 'line'
+    assert {p['Documento'] for p in lines['data']['values']} == {'one', 'three'}
+    assert len({p['Tramo'] for p in lines['data']['values']}) == 2
+    assert markers['mark']['type'] == 'point'
+    assert {p['Documento'] for p in markers['data']['values']} == {'extra', 'benefit', 'other'}
+    assert 'transform' not in spec

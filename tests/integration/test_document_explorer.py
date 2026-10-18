@@ -127,7 +127,7 @@ def test_filters_and_empty_results(database, monkeypatch):
     assert not app.exception
     assert calls[-1] == {'company': 'Empresa Beta', 'year': 2025, 'month': 4}
     table = app.dataframe[0].value
-    assert list(table['Periodo documental']) == ['2025 / 04']
+    assert list(table['Periodo documental']) == ['04/2025']
     assert list(table['Empresa documental']) == ['Empresa Beta']
     app.text_input[0].set_value('2024').run()
     assert not app.dataframe
@@ -269,12 +269,15 @@ def test_summary_table_and_selection_follow_filters(database):
     assert list(table.proto.column_order) == ['Periodo documental', 'Empresa documental', 'Bruto', 'Neto']
     config = json.loads(table.proto.columns)
     assert config['Bruto']['alignment'] == config['Neto']['alignment'] == 'right'
-    assert list(table.value['Periodo documental'])[:3] == ['2025 / 05', '2025 / 04', '2024 / 03']
+    assert list(table.value['Periodo documental'])[:3] == ['05/2025', '04/2025', '03/2024']
     identity = table.value.iloc[0]['Identificador']
     app.session_state[table.key] = {'selection': {'rows': [0], 'columns': [], 'cells': []}}
     app.run()
     assert not app.exception
-    assert app.code[0].value == identity
+    from src.gui_presentation import short_id
+    assert short_id(app.code[0].value) == identity
+    assert len(app.code[0].value) > len(identity)
+    assert any(item.value == 'a' * 64 for item in app.code)
     app.selectbox[0].select('Empresa Alfa').run()
     assert [item.value for item in app.metric] == ['1', '1']
     assert not app.code  # Stale selection cannot identify a different document.

@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
+from src.gui_presentation import format_period, short_id
 
 # Application scope only; never persisted as documentary currency.
 PRESENTATION_CURRENCY = 'EUR'
@@ -40,12 +41,10 @@ def format_amount(value: dict[str, Any]) -> str:
 
 def document_row(row: dict[str, Any]) -> dict[str, str]:
     """Keep documentary context separate from the two value certifications."""
-    year = str(row['year']) if row['year'] is not None else 'Año ausente o ambiguo'
-    month = f'{row["month"]:02d}' if row['month'] is not None else 'mes ausente o ambiguo'
     return {
-        'Identificador': row['document_id'],
+        'Identificador': short_id(row['document_id']),
         'Empresa documental': row['company_text'] or 'Empresa ausente o ambigua',
-        'Periodo documental': f'{year} / {month}',
+        'Periodo documental': format_period(row['year'], row['month']),
         'Bruto': format_amount(row['gross']),
         'Neto': format_amount(row['net']),
         'Certificación de valores': 'Bruto: ' + STATUS_LABELS[row['gross']['status']]
@@ -170,6 +169,14 @@ def render_app() -> None:
                 st.caption('Identificador del documento')
                 st.code(selected['document_id'], language=None, wrap_lines=True)
                 st.text(document_row(selected)['Certificación de valores'])
+                try:
+                    with open_inspector(config.database) as inspector:
+                        detail = inspector.document(selected['document_id'])
+                    for version in detail['versions']:
+                        st.caption('SHA-256 del archivo · ' + short_id(version['version'].version_id))
+                        st.code(version['source_file'].sha256, language=None, wrap_lines=True)
+                except InspectionError:
+                    st.warning('No se pudo recuperar el soporte documental.')
 
     with st.expander('Cómo interpretar los documentos', icon=':material/info:'):
         st.write('El periodo es documental; no presupone liquidación ni devengo. '
