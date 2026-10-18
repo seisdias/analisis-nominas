@@ -81,8 +81,24 @@ unen meses consecutivos con datos representables; los huecos no se rellenan con
 ceros ni se interpolan. La gráfica permite zoom, desplazamiento y consulta de
 identificadores e importes exactos al pasar el cursor.
 
-Si varios documentos o candidatos coinciden en empresa y mes, el periodo se marca
-como ambiguo y no se representa una cifra mensual única. Las observaciones de
+C.3 permite puntos individuales en un mismo mes cuando las categorías específicas
+están respaldadas por hechos de tipo explícitos, o cuando documentos de igual
+categoría tienen intervalos documentales explícitos no solapados. Para habilitar
+esta representación multipago se exige una única versión por documento y soporte
+concordante; las observaciones competidoras permanecen bloqueadas. Los tipos
+«otros» y «sin clasificar» no acreditan esa distinción. No se deduce aditividad.
+Los puntos multipago quedan aislados de las líneas y de la media móvil, incluso
+al filtrar categorías. Los intervalos se conservan como evidencia documental, sin
+convertirlos en periodo económico ni atribuir fechas ausentes.
+
+Si una revisión pendiente aún no está expresada en la evidencia, puede restringirse
+solo la presentación mediante `[presentation].withheld_document_ids` en el
+`config.toml` local (ver `config.example.toml`). La lista usa IDs completos, bloquea
+el periodo afectado antes de filtrar y mantiene sus filas con una advertencia.
+No modifica la clasificación ni autoriza representar ningún valor. Esta restricción
+local debe conservarse al trasladar la configuración; no forma parte de SQLite.
+
+La multiplicidad sin soporte suficiente sigue marcada como ambigua. Las observaciones de
 versiones ya resueltas se recuperan mediante las consultas y certificación
 existentes; la pantalla no resuelve versiones. La tabla conserva cada observación
 por separado, los estados sin observación y los identificadores de documento,

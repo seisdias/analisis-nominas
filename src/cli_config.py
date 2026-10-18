@@ -16,6 +16,7 @@ class Configuration:
     database: Path
     payroll_directory: Path | None
     source: str
+    withheld_document_ids: tuple[str, ...] = ()
 
 
 def _path(value: object, label: str) -> Path:
@@ -41,6 +42,12 @@ def load_config(*, database: str | Path | None = None,
         paths = data.get('paths', {})
         if not isinstance(paths, dict):
             raise ConfigurationError('Configuración: [paths] debe ser una tabla TOML.')
+        presentation = data.get('presentation', {})
+        if not isinstance(presentation, dict):
+            raise ConfigurationError('Configuración: [presentation] debe ser una tabla TOML.')
+        withheld = presentation.get('withheld_document_ids', [])
+        if not isinstance(withheld, list) or any(not isinstance(v, str) or not v.strip() for v in withheld):
+            raise ConfigurationError('Configuración: withheld_document_ids debe ser una lista de identificadores.')
         environment_database = os.environ.get('ANALISIS_NOMINAS_CANONICAL_DB')
         source = ('argumento explícito' if database is not None else
                   'ANALISIS_NOMINAS_CANONICAL_DB' if environment_database else 'config.toml')
@@ -55,6 +62,7 @@ def load_config(*, database: str | Path | None = None,
             _path(database_value, 'database'),
             _path(payroll, 'payroll_directory') if payroll is not None else None,
             source,
+            tuple(sorted(set(withheld))),
         )
     except (OSError, UnicodeError, tomllib.TOMLDecodeError, RuntimeError) as error:
         raise ConfigurationError('No se puede leer config.toml o sus rutas. '

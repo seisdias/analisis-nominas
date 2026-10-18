@@ -7,3 +7,9 @@ database = "data/private/canonical-candidate-a3-v2.sqlite"
 # Sin database ni variable de entorno no se selecciona ninguna base por defecto.
 # Opcional e informativo: CLI y GUI no leen ni importan documentos.
 # payroll_directory = "data/private/nominas"
+
+# Restricción opcional de presentación por revisión pendiente, nunca autorización.
+# Usar IDs documentales completos; se bloquea el periodo afectado antes de filtrar.
+# No modifica evidencia, clasificación, elegibilidad ni la base de datos.
+[presentation]
+withheld_document_ids = []
