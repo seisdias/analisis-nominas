@@ -1,18 +1,32 @@
 """Read-only timeline presentation; individual certified observations, never totals."""
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from hashlib import sha256
 from typing import Any
 
 import altair as alt
 import streamlit as st
 
+from src.analytic_dataset import AnalyticDocument, DocumentCategory, load_analytic_dataset
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
 from src.document_explorer import PRESENTATION_CURRENCY, STATUS_LABELS, format_amount
+from src.gui_presentation import format_period, friendly_timeline_rows, short_id
 
 START_YEAR = 2006
 SERIES = ('Bruto', 'Neto')
+CATEGORY_LABELS = {
+    DocumentCategory.ORDINARY: 'Nóminas ordinarias',
+    DocumentCategory.EXTRA: 'Pagas extraordinarias',
+    DocumentCategory.BENEFITS: 'Pagas de beneficios',
+    DocumentCategory.ARREARS_ADJUSTMENT: 'Otros ingresos económicos',
+    DocumentCategory.SETTLEMENT: 'Otros ingresos económicos',
+    DocumentCategory.OTHER: 'Otros ingresos económicos',
+    DocumentCategory.UNCLASSIFIED: 'Documentos sin clasificar',
+}
+CATEGORIES = tuple(dict.fromkeys(CATEGORY_LABELS.values()))
 
 
 @dataclass(frozen=True)
@@ -57,7 +71,7 @@ def prepare_timeline(records: list[dict[str, Any]], *, years: tuple[int, int],
                   'Divisa incompatible con EUR' if currency is not None and currency.code != PRESENTATION_CURRENCY else
                   'Sin importe certificado' if value['status'] != 'certified' or value.get('amount') is None else
                   'Representado')
-        period = f'{row["year"] or "?"} / {row["month"]:02d}' if row['month'] else f'{row["year"] or "?"} / ?'
+        period = format_period(row['year'], row['month'])
         table.append({'Periodo': period, 'Empresa': row['company_text'] or 'Empresa ausente o ambigua',
                       'Serie': row['series'], 'Importe': format_amount(value),
                       'Certificación': STATUS_LABELS[value['status']], 'Representación': reason,
@@ -78,6 +92,45 @@ def prepare_timeline(records: list[dict[str, Any]], *, years: tuple[int, int],
                        'Documento': row['document_id'], 'Observación': row['observation_id'],
                        'Tramo': f'{segment}'})
     return Timeline(points, table, len(ambiguous))
+
+
+def document_categories(dataset: Sequence[AnalyticDocument]) -> dict[str, str]:
+    """Join only by unique full logical identity, never by company/date/amount."""
+    grouped: dict[str, list[AnalyticDocument]] = defaultdict(list)
+    for doc in dataset:
+        grouped[doc.document_id].append(doc)
+    return {identity: CATEGORY_LABELS[docs[0].category]
+            for identity, docs in grouped.items()
+            if len(docs) == 1 and docs[0].classification_document_id == identity}
+
+
+def classified_timeline(records: list[dict[str, Any]], dataset: Sequence[AnalyticDocument], *,
+                        years: tuple[int, int], company: str | None = None,
+                        series: tuple[str, ...] = SERIES,
+                        categories: tuple[str, ...] = CATEGORIES) -> Timeline:
+    # Guard all candidates BEFORE category selection: hiding a competing document
+    # is not a documentary resolution. Keep B.2's conservative monthly contract.
+    original = prepare_timeline(records, years=years, company=company, series=series)
+    labels = document_categories(dataset)
+    def selected(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched = [dict(row, Categoría=labels.get(row['Documento'], CATEGORIES[-1])) for row in rows]
+        return [row for row in enriched if row['Categoría'] in categories]
+    points = selected(original.points)
+    previous: dict[tuple[str, str, str], tuple[int, int]] = {}
+    for point in points:
+        index = int(point['Fecha'][:4]) * 12 + int(point['Fecha'][5:7])
+        key = (point['Empresa'], point['Serie'], point['Categoría'])
+        last, segment = previous.get(key, (index - 1, 0))
+        segment += index != last + 1
+        previous[key] = (index, segment)
+        point['Tramo'] = str(segment)
+    return Timeline(points, selected(original.table), original.ambiguous_periods)
+
+
+def category_average(points: list[dict[str, Any]], records: list[dict[str, Any]], *,
+                     classified: bool) -> list[dict[str, Any]]:
+    eligible = [p for p in points if p['Categoría'] == CATEGORIES[0]] if classified else points
+    return moving_average(eligible, records)
 
 
 def moving_average(points: list[dict[str, Any]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -135,6 +188,58 @@ def timeline_chart(points: list[dict[str, Any]], start: str, end: str,
     return chart
 
 
+def category_chart(points: list[dict[str, Any]], start: str, end: str,
+                   averages: list[dict[str, Any]]) -> alt.LayerChart | alt.FacetChart:
+    """Ordinary lines and isolated category markers, without economic transforms."""
+    displayed = [dict(p, Documento=short_id(p['Documento']), Observación=short_id(p['Observación']))
+                 for p in points]
+    lines = [p for p in displayed if p['Categoría'] == CATEGORIES[0]]
+    markers = [p for p in displayed if p['Categoría'] != CATEGORIES[0]]
+    base = alt.Chart().encode(
+        x=alt.X('Fecha:T', title='Periodo documental (mes)', scale=alt.Scale(domain=[start, end]),
+                axis=alt.Axis(format='%m/%Y')),
+        y=alt.Y('Importe:Q', title='Importe (€)', scale=alt.Scale(zero=False)),
+        color=alt.Color('Empresa:N', title='Empresa'),
+        tooltip=[alt.Tooltip('Fecha:T', format='%m/%Y'), 'Empresa:N', 'Categoría:N', 'Serie:N',
+                 alt.Tooltip('Importe exacto:N', title='Importe'), 'Documento:N'])
+    ordinary = base.properties(data=alt.Data(values=lines)).mark_line(point=True).encode(
+        strokeDash='Serie:N', detail='Tramo:N')
+    isolated = base.properties(data=alt.Data(values=markers)).mark_point(size=100, filled=True).encode(
+        shape=alt.Shape('Categoría:N', title='Tipo de ingreso',
+                        scale=alt.Scale(domain=list(CATEGORIES[1:]), range=['diamond', 'triangle-up', 'square', 'cross'])),
+        opacity=alt.Opacity('Serie:N', scale=alt.Scale(domain=list(SERIES), range=[1, 0.45])))
+    reference = base.properties(data=alt.Data(values=averages)).mark_line(strokeWidth=3, point=True).encode(
+        strokeDash='Serie:N', detail='Tramo:N')
+    return alt.layer(ordinary, isolated, reference).properties(height=400).interactive()
+
+
+def reset_timeline_filters() -> None:
+    for key in ('timeline_company', 'timeline_years', 'timeline_series', 'timeline_categories', 'timeline_average'):
+        st.session_state.pop(key, None)
+
+
+def render_timeline_details(rows: list[dict[str, Any]], dataset: Sequence[AnalyticDocument]) -> None:
+    if not rows:
+        return
+    with st.expander('Identificadores completos y soporte documental'):
+        key = sha256(repr(rows).encode()).hexdigest()
+        index = st.selectbox('Consultar un registro', [None, *range(len(rows))],
+            format_func=lambda i: 'Selecciona un registro' if i is None else
+                f"{i + 1}. {rows[i]['Periodo']} · {rows[i]['Empresa']} · {rows[i]['Serie']} · {short_id(rows[i]['Documento'])}",
+            key='timeline-detail-' + key)
+        if index is not None:
+            row = rows[index]
+            for field in ('Documento', 'Observación', 'Versiones del documento', 'Versiones del soporte'):
+                st.caption(field)
+                st.code(row[field], language=None, wrap_lines=True)
+            st.caption('Elegibilidad: ' + row['Elegibilidad'])
+            for doc in dataset:
+                if doc.document_id == row['Documento']:
+                    for version in doc.provenance:
+                        st.caption('SHA-256 del archivo · ' + short_id(version.version_id))
+                        st.code(version.file_sha256, language=None, wrap_lines=True)
+
+
 def render_timeline() -> None:
     st.title('Evolución histórica de nóminas')
     st.caption('Evolución documental, no agregación certificada')
@@ -142,6 +247,7 @@ def render_timeline() -> None:
         config = load_config()
         with open_inspector(config.database) as inspector:
             records = inspector.timeline_records()
+        dataset = load_analytic_dataset(config.database)
     except ConfigurationError as error:
         st.warning(str(error))
         return
@@ -155,14 +261,21 @@ def render_timeline() -> None:
     latest = max(((r['year'], r['month']) for r in records
                   if r['year'] is not None and r['month'] is not None), default=(START_YEAR, 1))
     last_year = max(START_YEAR, latest[0])
+    labels = document_categories(dataset)
+    available = {labels.get(r['document_id'], CATEGORIES[-1]) for r in records}
+    classified = any(label != CATEGORIES[-1] for label in available)
     with st.container(border=True):
+        st.button('Restablecer filtros', on_click=reset_timeline_filters)
         company = st.selectbox('Empresa documental', [None, *sorted({r['company_text'] for r in records
                                                                     if r['company_text'] is not None})],
                                format_func=lambda name: name or 'Todas las empresas', key='timeline_company')
-        years = st.slider('Intervalo de años', START_YEAR, last_year, (START_YEAR, last_year)) if last_year > START_YEAR else (START_YEAR, START_YEAR)
-        selected = st.multiselect('Series', SERIES, default=list(SERIES))
-        show_average = st.checkbox('Mostrar media móvil de 12 meses')
-    result = prepare_timeline(records, years=years, company=company, series=tuple(selected))
+        years = st.slider('Intervalo de años', START_YEAR, last_year, (START_YEAR, last_year), key='timeline_years') if last_year > START_YEAR else (START_YEAR, START_YEAR)
+        selected = st.multiselect('Series', SERIES, default=list(SERIES), key='timeline_series')
+        show_average = st.checkbox('Mostrar media móvil de 12 meses', key='timeline_average')
+        categories = st.multiselect('Tipos de ingreso', CATEGORIES, default=[c for c in CATEGORIES if c in available],
+            format_func=lambda c: c if c in available else c + ' · Sin registros', key='timeline_categories')
+    result = classified_timeline(records, dataset, years=years, company=company, series=tuple(selected),
+                                 categories=tuple(categories))
     st.caption('Series originales: valores documentales certificados, sin sumas ni promedios. '
                'Los meses sin puntos no equivalen a cero; las líneas se interrumpen en los huecos. '
                'La tabla conserva los importes exactos; el eje gráfico usa aproximación numérica.')
@@ -172,8 +285,10 @@ def render_timeline() -> None:
         st.warning('Hay divisas incompatibles con EUR. Sus valores no se convierten ni se dibujan como euros.')
     if any('incompleto' in r['Representación'] for r in result.table):
         st.info('Los documentos con empresa o periodo incompleto permanecen en la tabla, aunque no puedan ubicarse en la gráfica.')
-    averages = moving_average(result.points, records) if show_average else []
+    averages = category_average(result.points, records, classified=classified) if show_average else []
     if show_average:
+        st.caption('Media sobre nóminas ordinarias identificadas por C.1.' if classified else
+                   'Referencia documental B.3: no hay clasificación utilizable; no identifica un salario ordinario.')
         st.caption('Media estadística orientativa basada en observaciones documentales. '
                    'No constituye salario certificado. No equivale a una retribución mensual prorrateada.')
         st.info(f'{len(averages)} puntos de media móvil disponibles. Se requieren 12 meses consecutivos válidos '
@@ -182,16 +297,21 @@ def render_timeline() -> None:
                 'incompleto bloquean las ventanas a las que podrían pertenecer.')
     if result.points:
         end = f'{years[1]:04d}-{latest[1] if years[1] == latest[0] else 12:02d}-01'
-        st.altair_chart(timeline_chart(result.points, f'{years[0]:04d}-01-01', end, averages), width='stretch')
+        st.altair_chart(category_chart(result.points, f'{years[0]:04d}-01-01', end, averages), width='stretch')
         st.caption(f'{len(result.points)} puntos documentales · {len(result.table)} registros de series en la tabla.')
     else:
         st.info('No hay puntos representables para los filtros seleccionados.')
     st.subheader('Registros documentales')
-    st.dataframe(result.table, hide_index=True, width='stretch', column_config={
+    st.dataframe(friendly_timeline_rows(result.table), hide_index=True, width='stretch', column_config={
         'Importe': st.column_config.TextColumn(alignment='right'),
         'Documento': st.column_config.TextColumn(width='large'),
     })
+    render_timeline_details(result.table, dataset)
     with st.expander('Trazabilidad y ambigüedades'):
+        st.write('Las categorías proceden del dataset C.1 y se enlazan solo por identificador completo. '
+                 'Sin correspondencia única se muestra «Documentos sin clasificar». Otros ingresos agrupa '
+                 'las categorías de atrasos, finiquitos y otros documentos, sin sumar sus importes. '
+                 'Los marcadores no implican que un documento sea un ingreso adicional acumulable.')
         st.write('Cada fila corresponde a una observación o a una serie sin observación de un documento. '
                  'Los identificadores de documento, observación y versiones permiten inspeccionar su soporte. '
                  'Se reutilizan los resultados de las decisiones documentales ya incorporadas a la base; '

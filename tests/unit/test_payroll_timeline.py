@@ -120,3 +120,81 @@ def test_null_eur_and_missing_amount_are_independent():
     assert [r['Serie'] for r in averages(rows)] == ['Neto · Media móvil de 12 meses']
     rows[11]['value']['status'] = 'not_certified'
     assert averages(rows) == []
+
+
+def analytic(identity, category):
+    from src.analytic_dataset import AnalyticDocument
+    return AnalyticDocument(identity, 'corpus', None, 'Empresa', (2025, 1), category,
+                            'type', identity, 'documentary-classification/c1-v1', (), None,
+                            None, None, None, (), (), (), (), ())
+
+
+def test_classified_selection_is_exact_independent_and_preserves_gaps():
+    from src.analytic_dataset import DocumentCategory as C
+    from src.payroll_timeline import classified_timeline
+    rows = [record(doc='jan'), record(doc='extra', month=2), record(doc='mar', month=3),
+            record(doc='unknown', month=4), record(doc='other', month=5, company='Otra')]
+    dataset = [analytic('jan', C.ORDINARY), analytic('mar', C.ORDINARY), analytic('extra', C.EXTRA)]
+    result = classified_timeline(rows, dataset, years=(2025, 2025), categories=('Nóminas ordinarias',))
+    assert [p['Documento'] for p in result.points] == ['jan', 'mar']
+    assert result.points[0]['Tramo'] != result.points[1]['Tramo']
+    both = classified_timeline(rows, dataset, years=(2025, 2025),
+                              categories=('Nóminas ordinarias', 'Pagas extraordinarias'))
+    assert len(both.points) == 3
+    assert classified_timeline(rows, dataset, years=(2025, 2025), categories=('Pagas de beneficios',)).points == []
+    assert len(classified_timeline(rows, dataset, years=(2025, 2025), company='Otra').points) == 1
+    assert classified_timeline(rows, dataset, years=(2025, 2025), series=('Neto',)).points == []
+    unknown = classified_timeline(rows, dataset, years=(2025, 2025), categories=('Documentos sin clasificar',))
+    assert {p['Documento'] for p in unknown.points} == {'unknown', 'other'}
+
+
+def test_category_filter_cannot_resolve_ambiguity_or_duplicate_classification():
+    from src.analytic_dataset import DocumentCategory as C
+    from src.payroll_timeline import classified_timeline
+    rows = [record(doc='ordinary'), record(doc='extra')]
+    dataset = [analytic('ordinary', C.ORDINARY), analytic('extra', C.EXTRA)]
+    result = classified_timeline(rows, dataset, years=(2025, 2025), categories=('Nóminas ordinarias',))
+    assert result.points == []
+    assert len(result.table) == 1
+    assert 'ambiguo' in result.table[0]['Representación']
+    duplicate = classified_timeline(rows[:1], dataset + [analytic('ordinary', C.EXTRA)], years=(2025, 2025))
+    assert duplicate.points[0]['Categoría'] == 'Documentos sin clasificar'
+
+
+def test_average_separates_ordinary_from_extra_and_keeps_documentary_fallback():
+    from src.analytic_dataset import DocumentCategory as C
+    from src.payroll_timeline import category_average, classified_timeline
+    rows = year_records()
+    dataset = [analytic(f'd{m}', C.EXTRA if m == 6 else C.ORDINARY) for m in range(1, 13)]
+    result = classified_timeline(rows, dataset, years=(2025, 2025))
+    assert category_average(result.points, rows, classified=True) == []
+    unknown = classified_timeline(rows, [], years=(2025, 2025))
+    assert len(category_average(unknown.points, rows, classified=False)) == 2
+
+
+def test_friendly_ids_periods_and_technical_fields():
+    from src.gui_presentation import format_period, friendly_timeline_rows, short_id
+    identity = 'a' * 64
+    assert short_id(identity) == 'aaaaaaaaaaaa…aaaaaa'
+    assert short_id('short') == 'short'
+    assert format_period(2025, 3) == '03/2025'
+    assert 'ausente' in format_period(None, 3)
+    result = prepare_timeline([record(doc=identity)], years=(2025, 2025))
+    friendly = friendly_timeline_rows(result.table)
+    assert friendly[0]['Documento'] == short_id(identity)
+    assert 'Observación' not in friendly[0] and 'Elegibilidad' not in friendly[0]
+    assert result.table[0]['Documento'] == identity
+
+
+def test_canonical_short_id_uses_digest_not_common_namespace():
+    from src.gui_presentation import short_id
+    assert short_id('document:sha256:' + 'a' * 64) == 'aaaaaaaaaaaa…aaaaaa'
+
+
+def test_full_ordinary_year_keeps_b3_mean():
+    from src.analytic_dataset import DocumentCategory as C
+    from src.payroll_timeline import category_average, classified_timeline
+    rows = year_records()
+    dataset = [analytic(f'd{m}', C.ORDINARY) for m in range(1, 13)]
+    result = classified_timeline(rows, dataset, years=(2025, 2025))
+    assert category_average(result.points, rows, classified=True) == averages(rows)
