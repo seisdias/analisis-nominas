@@ -49,7 +49,7 @@ _CATEGORIES = {
     'CERTIFICADO_RETENCIONES': DocumentCategory.OTHER,
 }
 _CONTEXT_KEYS = tuple(prefix + name for prefix in ('nomina.', 'payload/')
-                      for name in ('empresa', 'anio', 'mes', 'tipo'))
+                      for name in ('empresa', 'anio', 'mes', 'tipo', 'fecha_inicio', 'fecha_fin'))
 
 
 @dataclass(frozen=True, slots=True)

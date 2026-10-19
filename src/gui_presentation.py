@@ -16,6 +16,6 @@ def format_period(year: int | None, month: int | None) -> str:
 
 
 def friendly_timeline_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    columns = ('Periodo', 'Empresa', 'Categoría', 'Serie', 'Importe', 'Certificación', 'Representación', 'Documento')
+    columns = ('Periodo', 'Empresa', 'Categoría', 'Serie', 'Importe', 'Certificación', 'Representación', 'Intervalo documental', 'Documento')
     return [{key: short_id(row[key]) if key == 'Documento' else row[key]
              for key in columns if key in row} for row in rows]
