@@ -89,7 +89,8 @@ class AnalyticDocument:
         return tuple(o.liquidation_period for o in self.observations)
 
 
-def _records(inspector: CanonicalInspector) -> tuple[AnalyticDocument, ...]:
+def read_analytic_dataset(inspector: CanonicalInspector) -> tuple[AnalyticDocument, ...]:
+    """Project within the caller's existing inspector snapshot, without opening another."""
     result = []
     for row in inspector.documents():
         identity = row['document_id']
@@ -175,4 +176,4 @@ def _records(inspector: CanonicalInspector) -> tuple[AnalyticDocument, ...]:
 def load_analytic_dataset(database: str | Path) -> tuple[AnalyticDocument, ...]:
     """Verified v8 read-only snapshot; rejects WAL like the existing inspector."""
     with open_inspector(Path(database)) as inspector:
-        return _records(inspector)
+        return read_analytic_dataset(inspector)

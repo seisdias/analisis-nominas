@@ -107,6 +107,29 @@ al filtrar años. Las divisas explícitas distintas de EUR generan una advertenc
 y no se dibujan como euros. El eje gráfico usa aproximación numérica; la tabla y
 los tooltips conservan el importe exacto con formato español.
 
+### Cobertura documental (C.4.1)
+
+La página «Cobertura documental» responde qué documentos hay por denominación
+empresarial exacta y año. Cuenta identidades lógicas, muestra meses documentados,
+huecos del intervalo elegido y categorías C.1; no calcula ingresos ni porcentajes.
+Un hueco no implica desempleo ni salario cero. Con contexto incompleto, la ausencia
+se muestra como incierta y los documentos sin año permanecen separados.
+
+La disponibilidad distingue observaciones certificadas por el inspector,
+observaciones no certificadas, observaciones múltiples y ausencia de observación.
+El criterio C.1 exige además una sola versión: se muestra por separado y no invalida
+las resoluciones ya existentes. Multiversión no equivale a conflicto pendiente.
+Las incidencias para revisión son señales de contexto, clasificación o disponibilidad,
+no decisiones humanas ni una nueva evaluación económica. Las restricciones locales
+`presentation.withheld_document_ids` se muestran sin quitar documentos de los recuentos.
+
+Cada indicador permite consultar sus documentos, versiones, extracciones, hashes,
+observaciones y referencias de hechos. Una única instantánea de lectura alimenta
+los modelos inmutables y el cálculo puro de `src.documentary_coverage`. No hay caché,
+nuevas tablas ni cambios de certificación o elegibilidad. La certificación privada
+opcional usa `CANONICAL_COVERAGE_TEST_DB` con una base de referencia ya preparada:
+`pytest -q --run-private tests/private/test_documentary_coverage.py` (no reconstruye).
+
 Para la persistencia legacy, `python -m scripts.init_db` crea únicamente el esquema,
 sin datos. La base predeterminada
 es `data/runtime/nominas.sqlite`; para otra ruta: `python -m scripts.init_db --db RUTA`.
