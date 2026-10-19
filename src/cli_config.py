@@ -46,8 +46,8 @@ def load_config(*, database: str | Path | None = None,
         if not isinstance(presentation, dict):
             raise ConfigurationError('Configuración: [presentation] debe ser una tabla TOML.')
         withheld = presentation.get('withheld_document_ids', [])
-        if not isinstance(withheld, list) or any(not isinstance(v, str) or not v.strip() for v in withheld):
-            raise ConfigurationError('Configuración: withheld_document_ids debe ser una lista de identificadores.')
+        if not isinstance(withheld, list) or any(not isinstance(v, str) or not v or v != v.strip() for v in withheld):
+            raise ConfigurationError('Configuración: withheld_document_ids debe ser una lista de identificadores no vacíos y sin espacios iniciales o finales.')
         environment_database = os.environ.get('ANALISIS_NOMINAS_CANONICAL_DB')
         source = ('argumento explícito' if database is not None else
                   'ANALISIS_NOMINAS_CANONICAL_DB' if environment_database else 'config.toml')

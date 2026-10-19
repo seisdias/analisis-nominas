@@ -156,3 +156,34 @@ def test_local_presentation_holds_configuration(tmp_path, monkeypatch):
     config.write_text('[paths]\ndatabase="synthetic.sqlite"\n[presentation]\nwithheld_document_ids=true\n')
     with pytest.raises(ConfigurationError, match='withheld_document_ids'):
         load_config()
+
+
+@pytest.mark.parametrize(('boundary', 'value'), [
+    (0, '20250101'), (0, '2025-W01-3'),
+    (1, '20250109'), (1, '2025-W02-4'),
+])
+def test_noncanonical_dates_cannot_unlock_multipayment(boundary, value):
+    interval = ['2025-01-01', '2025-01-09']
+    interval[boundary] = value
+    docs = [documented('a', C.SETTLEMENT, tuple(interval)),
+            documented('b', C.SETTLEMENT, ('2025-01-10', '2025-01-31'))]
+    result = plot([record('a'), record('b')], docs)
+    assert result.points == []
+    assert result.ambiguous_periods == 1
+
+
+@pytest.mark.parametrize('padding', [' ', '\t', '\n'])
+@pytest.mark.parametrize('leading', [True, False])
+def test_withheld_ids_reject_surrounding_whitespace(tmp_path, monkeypatch, padding, leading):
+    import json
+
+    from src.cli_config import ConfigurationError, load_config
+    monkeypatch.setattr('src.cli_config.REPOSITORY_ROOT', tmp_path)
+    monkeypatch.delenv('ANALISIS_NOMINAS_CANONICAL_DB', raising=False)
+    identity = str(deterministic_id('document', 'synthetic'))
+    value = padding + identity if leading else identity + padding
+    (tmp_path / 'config.toml').write_text(
+        '[paths]\ndatabase="synthetic.sqlite"\n[presentation]\nwithheld_document_ids='
+        + json.dumps([value]) + '\n')
+    with pytest.raises(ConfigurationError, match='withheld_document_ids'):
+        load_config()

@@ -60,6 +60,8 @@ def _documentary_interval(doc: AnalyticDocument) -> tuple[date, date] | None:
         start, end = (date.fromisoformat(v) for v in values if v is not None)
     except ValueError:
         return None
+    if [start.isoformat(), end.isoformat()] != values:
+        return None
     return (start, end) if start <= end else None
 
 
