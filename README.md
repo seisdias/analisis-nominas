@@ -67,6 +67,47 @@ No se almacenan resultados en caché.
 La consulta recorre el conjunto documental, sin paginación de servidor; está
 pensada para corpus locales.
 
+### Panel de análisis contextual (D.1–D.2)
+
+Abre «Panel de análisis» en la navegación lateral o `/render_panel`. Las pantallas
+anteriores siguen disponibles. No hay selector de modo de análisis: empresa,
+periodo y documento determinan automáticamente el contenido.
+
+- **Empresa:** denominación documental exacta; por defecto, todas.
+- **Periodo:** vacío para histórico completo, `2015` para enero–diciembre,
+  `09/2022` para un mes, `2015–2016` para años completos o
+  `03/2015 – 09/2015` / `01/2015 – 06/2016` para intervalos mensuales inclusivos.
+  Confirma con Intro o al salir del campo. Un periodo inválido muestra un aviso,
+  nunca una consulta más amplia.
+- **Documento:** solo ofrece documentos compatibles, con empresa, periodo,
+  categoría e identificador abreviado. No selecciona el primero automáticamente.
+  Al cambiar los filtros solo se limpia una selección documental incompatible.
+- **Información incompleta:** filtro explícito de empresa o periodo desconocido.
+  Un intervalo fechado exige año y mes conocidos; borra Periodo para localizar
+  documentos sin fecha, sin mezclarlos silenciosamente con un intervalo.
+
+Los filtros se combinan por intersección. El contexto efectivo siempre es visible.
+Un documento seleccionado abre una ficha; un mes muestra documentos individuales
+sin gráfica histórica; un intervalo, una empresa o el histórico muestran cobertura,
+categorías, incidencias y evolución cuando hay varios meses. «Volver al contexto»
+conserva empresa y periodo; «Restablecer filtros» devuelve la selección inicial.
+Se conserva únicamente el estado de controles en la sesión, sin caché documental.
+
+Los indicadores cuentan documentos y meses, nunca ingresos. Los huecos solo se
+cuentan dentro de una ventana explícita y se marcan inciertos si hay contexto
+incompleto compatible. En todas las empresas, un mes cubierto significa que hay
+algún documento ese mes, no que todas las empresas estén documentadas. El intervalo
+observado no es la duración del contrato ni un periodo de liquidación.
+
+La gráfica reutiliza C.3: cada importe es individual, conserva multipago y
+`presentation.withheld_document_ids`, y evalúa el contexto completo antes de
+restringir a un documento. La media opcional mantiene sus contratos, no incluye
+meses multipago y no equivale a salario certificado. La ficha muestra los estados
+del inspector, el contexto económico registrado y los hechos por versión y
+extracción, sin resolver versiones ni interpretar conceptos. Las tablas de hechos
+están limitadas explícitamente a 1.000 por extracción. Los identificadores completos,
+SHA y relaciones de soporte quedan accesibles en desplegables.
+
 ### Evolución histórica documental
 
 La navegación lateral incluye «Evolución histórica». Consulta la misma SQLite y
