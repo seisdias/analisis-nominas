@@ -39,7 +39,7 @@ def test_unknown_and_read_only(dataset):
     ('NOMINA_ORDINARIA', DocumentCategory.ORDINARY),
     ('PAGA_EXTRA', DocumentCategory.EXTRA),
     ('FINIQUITO', DocumentCategory.SETTLEMENT),
-    ('VARIABLE_BONUS', DocumentCategory.OTHER),
+    ('VARIABLE_BONUS', DocumentCategory.VARIABLE_BONUS),
     ('CERTIFICADO_RETENCIONES', DocumentCategory.OTHER),
     ('MANUAL_ESCANEADO', DocumentCategory.UNCLASSIFIED),
     ('benefits?', DocumentCategory.UNCLASSIFIED),
@@ -179,3 +179,15 @@ def test_duplicate_observation_is_ambiguous_not_summed(dataset):
     assert 'ambiguous_observations' in row.diagnostics
     assert (row.gross if old.magnitude == 'documentary_gross' else row.net) is None
     assert len(row.observations) == 4
+
+
+@pytest.mark.parametrize('kind', ['VARIABLE_BONUS', 'unknown', 'BENEFITS'])
+def test_bonus_contradictory_type_never_infers_category(dataset, kind):
+    import sqlite3
+    identity = add_document(dataset, 'explicit-kind', 2)
+    # Existing type fact says ordinary. A conflicting document type must stay blocked.
+    with sqlite3.connect(dataset[0]) as conn:
+        conn.execute('UPDATE logical_documents SET document_type=? WHERE document_id=?', (kind, identity))
+    row = next(d for d in load_analytic_dataset(dataset[0]) if d.document_id == identity)
+    assert row.category == DocumentCategory.UNCLASSIFIED
+    assert 'type_conflict' in row.diagnostics

@@ -23,9 +23,10 @@ SERIES = ('Bruto', 'Neto')
 CATEGORY_LABELS = {
     DocumentCategory.ORDINARY: 'Nóminas ordinarias',
     DocumentCategory.EXTRA: 'Pagas extraordinarias',
+    DocumentCategory.VARIABLE_BONUS: 'Variables / bonus',
     DocumentCategory.BENEFITS: 'Pagas de beneficios',
-    DocumentCategory.ARREARS_ADJUSTMENT: 'Otros ingresos económicos',
-    DocumentCategory.SETTLEMENT: 'Otros ingresos económicos',
+    DocumentCategory.ARREARS_ADJUSTMENT: 'Atrasos / regularizaciones',
+    DocumentCategory.SETTLEMENT: 'Finiquitos / liquidaciones',
     DocumentCategory.OTHER: 'Otros ingresos económicos',
     DocumentCategory.UNCLASSIFIED: 'Documentos sin clasificar',
 }
@@ -37,6 +38,30 @@ class Timeline:
     points: list[dict[str, Any]]
     table: list[dict[str, Any]]
     ambiguous_periods: int
+
+
+def visible_timeline(timeline: Timeline, categories: tuple[str, ...]) -> Timeline:
+    """Only hide rows: retain full-context decisions, segments and identities."""
+    return Timeline([p for p in timeline.points if p['Categoría'] in categories],
+                    [r for r in timeline.table if r['Categoría'] in categories],
+                    timeline.ambiguous_periods)
+
+
+def reset_categories(key: str) -> None:
+    st.session_state.pop(key, None)
+    st.session_state.pop(key + '_seen', None)
+
+
+def category_visibility(available: set[str], *, key: str, label: str) -> tuple[str, ...]:
+    """Remember visibility, including categories temporarily outside the context."""
+    seen = set(st.session_state.get(key + '_seen', ()))
+    chosen = set(st.session_state.get(key, ())) | (available - seen)
+    st.session_state[key] = [c for c in CATEGORIES if c in chosen]
+    st.session_state[key + '_seen'] = tuple(c for c in CATEGORIES if c in seen | available)
+    selected = st.multiselect(label, CATEGORIES, key=key, persist_state='session',
+        format_func=lambda c: c if c in available else c + ' · Sin registros')
+    st.button('Restablecer categorías', key=key + '_reset', on_click=reset_categories, args=(key,))
+    return tuple(selected)
 
 
 def _documentary_text(doc: AnalyticDocument, name: str) -> str | None:
@@ -285,7 +310,7 @@ def category_chart(points: list[dict[str, Any]], start: str, end: str,
         strokeDash='Serie:N', detail='Tramo:N')
     isolated = base.properties(data=alt.Data(values=markers)).mark_point(size=100, filled=True).encode(
         shape=alt.Shape('Categoría:N', title='Tipo de ingreso',
-                        scale=alt.Scale(domain=list(CATEGORIES), range=['circle', 'diamond', 'triangle-up', 'square', 'cross'])),
+                        scale=alt.Scale(domain=list(CATEGORIES), range=['circle', 'diamond', 'triangle-up', 'square', 'cross', 'triangle-down', 'triangle-right', 'triangle-left'])),
         opacity=alt.Opacity('Serie:N', scale=alt.Scale(domain=list(SERIES), range=[1, 0.45])))
     reference = base.properties(data=alt.Data(values=averages)).mark_line(strokeWidth=3, point=True).encode(
         strokeDash='Serie:N', detail='Tramo:N')
@@ -293,6 +318,7 @@ def category_chart(points: list[dict[str, Any]], start: str, end: str,
 
 
 def reset_timeline_filters() -> None:
+    reset_categories('timeline_categories')
     for key in ('timeline_company', 'timeline_years', 'timeline_series', 'timeline_categories', 'timeline_average'):
         st.session_state.pop(key, None)
 
@@ -340,9 +366,6 @@ def render_timeline() -> None:
     latest = max(((r['year'], r['month']) for r in records
                   if r['year'] is not None and r['month'] is not None), default=(START_YEAR, 1))
     last_year = max(START_YEAR, latest[0])
-    labels = document_categories(dataset)
-    available = {labels.get(r['document_id'], CATEGORIES[-1]) for r in records}
-    classified = any(label != CATEGORIES[-1] for label in available)
     with st.container(border=True):
         st.button('Restablecer filtros', on_click=reset_timeline_filters)
         company = st.selectbox('Empresa documental', [None, *sorted({r['company_text'] for r in records
@@ -351,11 +374,12 @@ def render_timeline() -> None:
         years = st.slider('Intervalo de años', START_YEAR, last_year, (START_YEAR, last_year), key='timeline_years') if last_year > START_YEAR else (START_YEAR, START_YEAR)
         selected = st.multiselect('Series', SERIES, default=list(SERIES), key='timeline_series')
         show_average = st.checkbox('Mostrar media móvil de 12 meses', key='timeline_average')
-        categories = st.multiselect('Tipos de ingreso', CATEGORIES, default=[c for c in CATEGORIES if c in available],
-            format_func=lambda c: c if c in available else c + ' · Sin registros', key='timeline_categories')
-    result = classified_timeline(records, dataset, years=years, company=company, series=tuple(selected),
-                                 categories=tuple(categories),
-                                 withheld_document_ids=frozenset(config.withheld_document_ids))
+    full = classified_timeline(records, dataset, years=years, company=company, series=tuple(selected),
+                               withheld_document_ids=frozenset(config.withheld_document_ids))
+    available = {r['Categoría'] for r in full.table}
+    categories = category_visibility(available, key='timeline_categories', label='Tipos de ingreso')
+    result = visible_timeline(full, categories)
+    classified = any(label != CATEGORIES[-1] for label in available)
     st.caption('Series originales: valores documentales certificados, sin sumas ni promedios. '
                'Los meses sin puntos no equivalen a cero; las líneas se interrumpen en los huecos. '
                'La tabla conserva los importes exactos; el eje gráfico usa aproximación numérica.')
@@ -368,10 +392,12 @@ def render_timeline() -> None:
         st.warning('Hay divisas incompatibles con EUR. Sus valores no se convierten ni se dibujan como euros.')
     if any('incompleto' in r['Representación'] for r in result.table):
         st.info('Los documentos con empresa o periodo incompleto permanecen en la tabla, aunque no puedan ubicarse en la gráfica.')
-    averages = category_average(result.points, records, classified=classified) if show_average else []
+    averages = category_average(full.points, records, classified=True) if show_average else []
+    if CATEGORIES[0] not in categories:
+        averages = []
     if show_average:
         st.caption('Media sobre nóminas ordinarias identificadas por C.1.' if classified else
-                   'Referencia documental B.3: no hay clasificación utilizable; no identifica un salario ordinario.')
+                   'Referencia no disponible: faltan nóminas ordinarias con clasificación fiable.')
         st.caption('Media estadística orientativa basada en observaciones documentales. '
                    'No constituye salario certificado. No equivale a una retribución mensual prorrateada.')
         st.info(f'{len(averages)} puntos de media móvil disponibles. Se requieren 12 meses consecutivos válidos '
@@ -392,8 +418,8 @@ def render_timeline() -> None:
     render_timeline_details(result.table, dataset)
     with st.expander('Trazabilidad y ambigüedades'):
         st.write('Las categorías proceden del dataset C.1 y se enlazan solo por identificador completo. '
-                 'Sin correspondencia única se muestra «Documentos sin clasificar». Otros ingresos agrupa '
-                 'las categorías de atrasos, finiquitos y otros documentos, sin sumar sus importes. '
+                 'Sin correspondencia única se muestra «Documentos sin clasificar». Extras, variables, '
+                 'atrasos y finiquitos conservan categorías separadas, sin sumar sus importes. '
                  'Los marcadores no implican que un documento sea un ingreso adicional acumulable.')
         st.write('Cada fila corresponde a una observación o a una serie sin observación de un documento. '
                  'Los identificadores de documento, observación y versiones permiten inspeccionar su soporte. '

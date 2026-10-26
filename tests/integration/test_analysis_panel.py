@@ -95,3 +95,49 @@ def test_panel_navigation_keeps_previous_pages(database):
     labels = [getattr(item, 'label', None) for item in app.get('page_link')]
     assert all(label in labels for label in ('Panel de análisis', 'Explorador', 'Evolución histórica', 'Cobertura documental'))
     assert not app.exception
+
+
+def test_category_visibility_preserves_coverage_context_and_detail(database):
+    app = page()
+    category = 'Documentos sin clasificar'
+    assert app.multiselect(key='panel_categories').value == [category]
+    app.multiselect(key='panel_categories').set_value([]).run()
+    assert app.metric[0].value == '4'
+    assert not app.get('vega_lite_chart')
+    app.text_input(key='panel_period').set_value('03/2024').run()
+    assert app.multiselect(key='panel_categories').value == []
+    assert app.metric[0].value == '1'
+    identity = app.session_state['panel_valid_ids'][0]
+    app.selectbox(key='panel_document').select(identity).run()
+    assert any(c.value == identity for c in app.code)
+    app.button(key='panel_back').click().run()
+    assert app.multiselect(key='panel_categories').value == []
+    app.button(key='panel_categories_reset').click().run()
+    assert app.multiselect(key='panel_categories').value == [category]
+    assert app.text_input(key='panel_period').value == '03/2024'
+    assert not app.exception
+
+
+def test_multiple_categories_independent_and_preferences_survive_context(database, monkeypatch):
+    from dataclasses import replace
+
+    from src.analysis_panel import load_panel
+    from src.analytic_dataset import DocumentCategory as C
+    snapshot = load_panel(database)
+    kinds = [C.ORDINARY, C.EXTRA, C.VARIABLE_BONUS, C.UNCLASSIFIED]
+    coverage = tuple(replace(d, document=replace(d.document, category=c))
+                     for d, c in zip(snapshot.coverage, kinds, strict=True))
+    monkeypatch.setattr('src.analysis_panel.load_panel', lambda *args: replace(snapshot, coverage=coverage))
+    app = page()
+    widget = app.multiselect(key='panel_categories')
+    assert len(widget.value) == 4
+    for category in ('Pagas extraordinarias', 'Variables / bonus'):
+        app.multiselect(key='panel_categories').set_value([category]).run()
+        assert app.metric[0].value == '4'
+        assert app.dataframe[-1].value.shape[0] == 4  # Complete inventory.
+        assert set(app.dataframe[-2].value['Categoría']) == {category}
+    app.selectbox(key='panel_company').select('Empresa Alfa').run()
+    assert app.multiselect(key='panel_categories').value == ['Variables / bonus']
+    app.selectbox(key='panel_company').select(None).run()
+    assert app.multiselect(key='panel_categories').value == ['Variables / bonus']
+    assert not app.exception

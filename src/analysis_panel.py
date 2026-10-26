@@ -7,15 +7,24 @@ from typing import Any
 import streamlit as st
 
 from src.analysis_context import AnalysisContext, ContextFilters, build_context, parse_period
-from src.analytic_dataset import read_analytic_dataset
+from src.analytic_dataset import DocumentCategory, read_analytic_dataset
 from src.canonical.values import CanonicalValue, ExactDecimal, ValueState
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
 from src.coverage_view import CATEGORIES, REASONS, _details
 from src.document_explorer import format_amount
 from src.documentary_coverage import Availability, CoverageDocument
-from src.gui_presentation import format_period, short_id
-from src.payroll_timeline import Timeline, category_average, category_chart, classified_timeline
+from src.gui_presentation import format_period, friendly_timeline_rows, short_id
+from src.payroll_timeline import (
+    CATEGORY_LABELS,
+    Timeline,
+    category_average,
+    category_chart,
+    category_visibility,
+    classified_timeline,
+    reset_categories,
+    visible_timeline,
+)
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,7 @@ def _clear_document() -> None:
 
 
 def _reset() -> None:
+    reset_categories('panel_categories')
     for key in ('panel_company', 'panel_period', 'panel_incomplete', 'panel_document', 'panel_average'):
         st.session_state.pop(key, None)
 
@@ -212,20 +222,30 @@ def render_panel() -> None:
             st.error('No se pudo recuperar el soporte documental; no se ha cambiado la selección.')
         return
     _summary(context, filters)
+    categories = category_visibility({CATEGORY_LABELS[d.document.category] for d in context.documents},
+        key='panel_categories', label='Tipos de ingreso visibles')
+    st.caption('La visibilidad solo cambia las series y la tabla económica; la cobertura y el inventario '
+               'conservan todos los documentos del contexto. No resuelve ambigüedades ni restricciones.')
+    visible = visible_timeline(timeline, categories)
     if context.level != 'month' and len(context.months) > 1:
         st.subheader('Evolución documental individual')
         show_average = st.checkbox('Mostrar media móvil de 12 meses', key='panel_average', persist_state='session')
         averages = category_average(timeline.points, snapshot.timeline,
-            classified=any(d.document.category.value != 'unclassified' for d in snapshot.coverage)) if show_average else []
+            classified=True) if show_average else []
+        if CATEGORY_LABELS[DocumentCategory.ORDINARY] not in categories:
+            averages = []
         if show_average:
             st.caption(f'{len(averages)} puntos de media orientativa; no es salario certificado ni prorrateado. '
                        'Exige 12 meses consecutivos válidos, sin multipago, huecos ni mezcla de categorías.')
-        if timeline.points:
+        if visible.points:
             start, end = period or (context.months[0], context.months[-1])
-            st.altair_chart(category_chart(timeline.points, f'{start[0]:04d}-{start[1]:02d}-01',
+            st.altair_chart(category_chart(visible.points, f'{start[0]:04d}-{start[1]:02d}-01',
                                           f'{end[0]:04d}-{end[1]:02d}-01', averages), width='stretch')
         else:
             st.info('Sin puntos representables; los documentos siguen disponibles en la tabla.')
+    st.subheader('Registros económicos visibles')
+    st.dataframe(friendly_timeline_rows(visible.table), hide_index=True, column_config={
+        'Importe': st.column_config.TextColumn(alignment='right')})
     st.subheader('Documentos disponibles')
     st.caption('Para ampliar una nómina, selecciónala en Documento. No se elige ni fusiona ninguna automáticamente.')
     st.dataframe(_document_rows(snapshot, context), hide_index=True, width='stretch', column_config={

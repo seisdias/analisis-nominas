@@ -141,11 +141,14 @@ def test_optional_average_keeps_original_chart_and_table(database):
 
 
 def test_average_visible_with_legend_and_unchanged_documentary_points(database, monkeypatch):
+    from src.analytic_dataset import DocumentCategory
     from src.payroll_timeline import moving_average
-    from tests.unit.test_payroll_timeline import year_records
+    from tests.unit.test_payroll_timeline import analytic, year_records
 
     rows = year_records()
     monkeypatch.setattr('src.canonical_inspection.CanonicalInspector.timeline_records', lambda self: rows)
+    monkeypatch.setattr('src.payroll_timeline.load_analytic_dataset',
+        lambda path: [analytic(f'd{m}', DocumentCategory.ORDINARY) for m in range(1, 13)])
     app = page()
     table = app.dataframe[0].value.copy()
     app.checkbox[0].check().run()
@@ -207,3 +210,37 @@ def test_category_chart_has_only_ordinary_lines_and_isolated_markers():
     assert markers['mark']['type'] == 'point'
     assert {p['Documento'] for p in markers['data']['values']} == {'extra', 'benefit', 'other'}
     assert 'transform' not in spec
+
+
+def test_unclassified_reference_is_omitted_without_changing_points(database, monkeypatch):
+    from tests.unit.test_payroll_timeline import year_records
+    monkeypatch.setattr('src.canonical_inspection.CanonicalInspector.timeline_records', lambda self: year_records())
+    app = page()
+    original = app.get('vega_lite_chart')[0].proto.spec
+    app.checkbox[0].check().run()
+    assert any('0 puntos' in item.value for item in app.info)
+    assert any('no disponible' in item.value for item in app.caption)
+    assert app.get('vega_lite_chart')[0].proto.spec == original
+    assert not app.exception
+
+
+def test_hiding_categories_does_not_change_average_inputs(database, monkeypatch):
+    from src.analytic_dataset import DocumentCategory as C
+    from src.payroll_timeline import category_average
+    from tests.unit.test_payroll_timeline import analytic, record, year_records
+    rows = year_records() + [record('bonus', year=2026, month=1)]
+    docs = [analytic(f'd{m}', C.ORDINARY) for m in range(1, 13)] + [analytic('bonus', C.VARIABLE_BONUS)]
+    monkeypatch.setattr('src.canonical_inspection.CanonicalInspector.timeline_records', lambda self: rows)
+    monkeypatch.setattr('src.payroll_timeline.load_analytic_dataset', lambda path: docs)
+    inputs = []
+    def capture(points, records, *, classified):
+        inputs.append(points)
+        return category_average(points, records, classified=classified)
+    monkeypatch.setattr('src.payroll_timeline.category_average', capture)
+    app = page()
+    app.checkbox[0].check().run()
+    assert any('2 puntos' in item.value for item in app.info)
+    app.multiselect(key='timeline_categories').set_value(['Nóminas ordinarias']).run()
+    assert any('2 puntos' in item.value for item in app.info)
+    assert inputs[-1] == inputs[-2] and len(inputs[-1]) == 25
+    assert not app.exception

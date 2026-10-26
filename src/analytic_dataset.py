@@ -19,6 +19,7 @@ from src.canonical_inspection import CanonicalInspector, open_inspector
 class DocumentCategory(StrEnum):
     ORDINARY = 'ordinary_payroll'
     EXTRA = 'extra_pay'
+    VARIABLE_BONUS = 'variable_bonus'
     BENEFITS = 'benefits_pay'
     ARREARS_ADJUSTMENT = 'arrears_adjustment'
     SETTLEMENT = 'settlement'
@@ -45,7 +46,7 @@ _CATEGORIES = {
     'NOMINA_ORDINARIA': DocumentCategory.ORDINARY,
     'PAGA_EXTRA': DocumentCategory.EXTRA,
     'FINIQUITO': DocumentCategory.SETTLEMENT,
-    'VARIABLE_BONUS': DocumentCategory.OTHER,
+    'VARIABLE_BONUS': DocumentCategory.VARIABLE_BONUS,
     'CERTIFICADO_RETENCIONES': DocumentCategory.OTHER,
 }
 _CONTEXT_KEYS = tuple(prefix + name for prefix in ('nomina.', 'payload/')
