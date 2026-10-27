@@ -22,6 +22,7 @@ STATUS = {
 CATEGORIES = {
     DocumentCategory.ORDINARY: 'Nómina ordinaria',
     DocumentCategory.EXTRA: 'Paga extraordinaria',
+    DocumentCategory.VARIABLE_BONUS: 'Variables / bonus',
     DocumentCategory.BENEFITS: 'Paga de beneficios',
     DocumentCategory.ARREARS_ADJUSTMENT: 'Atrasos / regularización',
     DocumentCategory.SETTLEMENT: 'Finiquito / liquidación',

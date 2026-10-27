@@ -327,3 +327,36 @@ venv/bin/pytest -q tests/integration/persistence/test_nominas_cli.py tests/integ
 venv/bin/ruff check .
 venv/bin/mypy
 ```
+
+### Categorías visibles en el panel (D.2.1)
+
+«Tipos de ingreso visibles» permite activar cada categoría por separado, sin salir del
+contexto de empresa y periodo. Todas las categorías presentes se muestran inicialmente;
+las ausentes se identifican con «Sin registros». Las preferencias se conservan al cambiar
+el contexto o abrir una ficha, y «Restablecer categorías» no modifica los filtros documentales.
+El mismo control se reutiliza en Evolución histórica.
+
+Se distinguen ordinarias, extraordinarias, **Variables / bonus**, beneficios, atrasos /
+regularizaciones, finiquitos / liquidaciones, otros y sin clasificar. `VARIABLE_BONUS`
+se asigna a su propia categoría desde el tipo documental explícito, conservando las
+comprobaciones de evidencia contradictoria o incierta. El contrato de parsing actual
+no identifica un tipo específico de beneficios ni de atrasos: esas categorías se
+mantienen disponibles en el dominio, sin inferencias por empresa, fecha o importe.
+Un bonus no se considera una paga de beneficios.
+
+La cobertura y «Documentos disponibles» siempre incluyen el contexto completo.
+«Registros económicos visibles» y el gráfico reflejan únicamente la visibilidad elegida.
+Ocultar una categoría no resuelve conflictos ni restricciones locales, no selecciona
+versiones y no habilita continuidad. La ficha seleccionada explícitamente permanece accesible.
+
+Las ordinarias conservan líneas y puntos, con sus interrupciones; las demás categorías
+y los multipagos se dibujan como marcadores aislados. Hay ocho formas estables, una por
+categoría; el color distingue empresas y el trazo/opacidad distingue bruto y neto.
+Los identificadores completos siguen disponibles en el detalle documental.
+
+La media opcional se calcula sobre el contexto completo de ordinarias representables,
+antes de aplicar visibilidad; extras, bonus y demás categorías no entran en ella.
+Se oculta junto a la serie ordinaria. Sin clasificación ordinaria fiable no se ofrece
+la antigua referencia sobre documentos sin clasificar. Se mantienen los requisitos de
+12 meses válidos consecutivos y las exclusiones por multipago, huecos y contexto incompleto.
+Ninguna referencia constituye salario certificado ni autoriza sumar ingresos.
