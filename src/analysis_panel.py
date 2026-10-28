@@ -8,13 +8,19 @@ import streamlit as st
 
 from src.analysis_context import AnalysisContext, ContextFilters, build_context, parse_period
 from src.analytic_dataset import DocumentCategory, read_analytic_dataset
-from src.canonical.values import CanonicalValue, ExactDecimal, ValueState
+from src.canonical.values import CanonicalValue, ValueState
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
+from src.concepts_view import render_concepts
 from src.coverage_view import CATEGORIES, REASONS, _details
 from src.document_explorer import format_amount
 from src.documentary_coverage import Availability, CoverageDocument
-from src.gui_presentation import format_period, friendly_timeline_rows, short_id
+from src.gui_presentation import (
+    canonical_value_text,
+    format_period,
+    friendly_timeline_rows,
+    short_id,
+)
 from src.payroll_timeline import (
     CATEGORY_LABELS,
     Timeline,
@@ -80,18 +86,6 @@ def _document_rows(snapshot: PanelSnapshot, context: AnalysisContext) -> list[di
              'Documento': short_id(d.document_id)} for d in context.documents]
 
 
-def _value(value: CanonicalValue) -> str:
-    # This renders evidence, not a certified monetary value. Never supplies EUR.
-    states = {ValueState.PRESENT: 'Disponible', ValueState.UNKNOWN: 'Desconocido',
-              ValueState.NOT_EXTRACTED: 'No extraído', ValueState.NOT_PRESENT: 'No presente',
-              ValueState.TECHNICAL_NULL: 'Nulo técnico', ValueState.NOT_APPLICABLE: 'No aplicable',
-              ValueState.UNRELIABLE: 'No fiable'}
-    if value.state != ValueState.PRESENT:
-        return states[value.state]
-    raw = value.value
-    text = str(raw.to_decimal()).replace('.', ',') if isinstance(raw, ExactDecimal) else str(raw)
-    return text + (' ' + value.currency.code if value.currency is not None else '')
-
 
 def _detail(database: Path, record: CoverageDocument, snapshot: PanelSnapshot) -> None:
     st.subheader('Ficha documental')
@@ -107,6 +101,7 @@ def _detail(database: Path, record: CoverageDocument, snapshot: PanelSnapshot) -
         st.warning('; '.join(REASONS[r] for r in record.review_reasons))
     if len(record.document.provenance) > 1:
         st.info('Documento multiversión: se conservan todas las versiones; esta ficha no elige ninguna.')
+    render_concepts(database, record.document_id)
     st.subheader('Contexto económico documentado')
     observations = record.document.observations
     if not observations:
@@ -114,22 +109,9 @@ def _detail(database: Path, record: CoverageDocument, snapshot: PanelSnapshot) -
     else:
         st.dataframe([{'Observación': short_id(o.observation_id), 'Magnitud original': o.magnitude,
             'Moneda registrada': o.value.currency.code if o.value.currency else 'Desconocida',
-            'Empresa canónica': record.document.employer_id or 'Desconocida', 'Liquidación': _value(o.liquidation_period),
-            'Devengo': (f'{o.accrual.start} – {o.accrual.end}' if o.accrual.state == ValueState.PRESENT else _value(CanonicalValue(state=o.accrual.state, reason_code=o.accrual.reason_code))), 'Fecha de cobro': _value(o.payment_date),
+            'Empresa canónica': record.document.employer_id or 'Desconocida', 'Liquidación': canonical_value_text(o.liquidation_period),
+            'Devengo': (f'{o.accrual.start} – {o.accrual.end}' if o.accrual.state == ValueState.PRESENT else canonical_value_text(CanonicalValue(state=o.accrual.state, reason_code=o.accrual.reason_code))), 'Fecha de cobro': canonical_value_text(o.payment_date),
             'Elegibilidad': str(o.eligibility)} for o in observations], hide_index=True)
-    with st.expander('Conceptos y hechos documentales disponibles'):
-        st.caption('Valores extraídos por versión y extracción; no son nuevas certificaciones ni conceptos sumables.')
-        with open_inspector(database) as inspector:
-            for version in record.document.provenance:
-                for extraction in version.extraction_ids:
-                    facts = inspector.facts(extraction_id=extraction, limit=1000)
-                    st.caption('Versión ' + short_id(version.version_id) + ' · Extracción ' + short_id(extraction))
-                    st.dataframe([{'Campo documental original': f.fact_key, 'Valor o estado': _value(f.value),
-                                   'Hecho': short_id(f.fact_id)} for f in facts], hide_index=True)
-                    if len(facts) == 1000:
-                        st.warning('Vista limitada a 1.000 hechos por extracción; puede haber más hechos disponibles.')
-                    with st.expander('Identificadores completos de estos hechos'):
-                        st.code('\n'.join(f.fact_id for f in facts) or 'Sin hechos', language=None)
     with st.expander('Trazabilidad: versiones, páginas, extracciones y soporte'):
         _details(record)
 
