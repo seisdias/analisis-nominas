@@ -400,3 +400,65 @@ Este incremento no certifica conceptos, suma importes, calcula neto de bonus ni
 reinterpreta bruto/neto. **D.2.3-B** queda pendiente: selección de familias y magnitudes,
 gráficos de conceptos y sus contratos de comparabilidad y representación. Las gráficas
 actuales y las categorías documentales no cambian.
+
+### Totales y componentes extraordinarios (D.2.3-B1)
+
+El Panel de análisis y Evolución histórica distinguen **«Bruto/neto del documento,
+incluidos posibles conceptos extraordinarios»** de una segunda gráfica de componentes.
+Una nómina ordinaria conserva su total completo y su clasificación, aunque incluya un
+bonus. La media móvil sigue siendo opcional y documental: no descuenta partidas para
+fabricar una serie de salario recurrente. Los controles de componentes no la recalculan.
+
+**Tipos de ingreso** mantiene la visibilidad de las categorías documentales.
+**Componentes económicos visibles** permite ocultar independientemente las partidas
+internas disponibles, con **Restablecer componentes** y preferencias de sesión.
+No cambia cobertura, filtros, ficha, certificaciones ni restricciones. En el panel,
+ambas gráficas respetan la intersección de empresa, periodo y documento. La histórica
+reutiliza exactamente el mismo lector, proyector y controles, con su intervalo de años
+existente; su sección de componentes aparece después de los registros documentales.
+No hay un selector vacío cuando faltan puntos aptos.
+
+El contrato de presentación `documentary-components/d2.3-b1-v1` admite únicamente estas
+correspondencias exactas de extractor, código, denominación, categoría y marca de atraso,
+siempre en la columna **devengos**, con importe canónico `present` decimal:
+
+| Extractor | Código y denominación original | Representación |
+|---|---|---|
+| INECO | `9032` · `paga extra vera`; `9033` · `paga extra navi` | Extra de verano / Navidad incluida |
+| INECO | `9RPE` · `r. pext dic 2012`, categoría `regularizaciones` | Ajustes de extras, en el periodo del documento |
+| Exceltic | `1` · `P.P.EXTRA` | Prorrata de extras |
+| Altran | `R1X` · `Parte Proporcional Pagas Extras` | Prorrata de extras |
+| ALTEN (evidencia legacy) | `9016` · `P.P. Extra Verano`; `9017` · `P.P. Extra Navidad` | Prorratas de extras, conservando etiquetas distintas |
+| ALTEN (evidencia legacy) | `9122` · `Bono`; `9030` · `Bono/Variable` | Bonus / variable |
+
+Estas correspondencias no son equivalencias entre empresas. No dependen del mes, del
+importe ni del nombre del archivo. La marca de atraso de los casos admitidos es `false`;
+la regularización INECO se reconoce por su código, denominación y categoría explícitos,
+no porque toda regularización o atraso sea una extraordinaria. Otras denominaciones,
+códigos, categorías contradictorias o revisiones con otro vocabulario quedan fuera,
+accesibles en la ficha. No se infiere que incentivos, beneficios, horas extras o
+«gratificaciones extraordinarias» sean bonus. Las bases, porcentajes, deducciones y
+prorratas escalares informativas no entran en esta gráfica.
+
+Solo se representan conceptos de una versión con un único desglose de extracción
+inequívoco. Multiversión, varias extracciones con conceptos o vocabularios alternativos
+no provocan una elección automática. Las restricciones locales y multipago se calculan
+sobre el contexto completo, antes de ocultar categorías, bruto/neto o componentes.
+Seleccionar una versión para leerla en la ficha no autoriza su representación global.
+Los totales multiversión que ya permiten los contratos anteriores se conservan.
+
+Todos los componentes usan **marcadores aislados**, incluso las prorratas. No se trazan
+líneas sin un contrato adicional de continuidad, ni se interpolan meses, apilan conceptos,
+suman partidas o calculan netos parciales. Las empresas se separan visualmente cuando
+hay varias. La información emergente y el desplegable conservan etiqueta, código,
+importe exacto, estado, moneda registrada, periodo documental, página e identificadores
+completos de documento, versión, extracción, ocurrencia y hecho. Los puntos coincidentes
+pueden solaparse; sus ocurrencias permanecen separadas en la tabla de trazabilidad.
+El eje utiliza EUR como convención visual, sin acreditar la moneda canónica ausente;
+las monedas explícitas incompatibles se excluyen con aviso.
+
+Sin desglose persistido, Coritel e INSIS4 conservan sus totales y extras independientes,
+pero no generan componentes mediante diferencias matemáticas. **D.2.3-B2** queda pendiente
+para otras familias y correspondencias justificadas. **D.2.3-C** deberá definir el contrato
+para series de conceptos multiversión; B1 no aplica a partidas parciales las resoluciones
+de totales ALTEN. No se crean observaciones ni se modifica SQLite.

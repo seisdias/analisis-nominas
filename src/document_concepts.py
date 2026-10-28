@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.canonical.facts import DocumentaryFact
 from src.canonical.values import ValueState
-from src.canonical_inspection import open_inspector
+from src.canonical_inspection import CanonicalInspector, open_inspector
 
 REFERENCE_FIELDS = {
     'salario_base': 'Salario base', 'plus_convenio': 'Plus convenio',
@@ -59,11 +59,14 @@ class ExtractionConcepts:
     concepts: tuple[ConceptOccurrence, ...]
     references: tuple[tuple[str, FactEvidence], ...]
     facts: tuple[FactEvidence, ...]
+    extractor_name: str = ""
+    extractor_revision: str = ""
 
 
 def project_extraction(document_id: str, version_id: str, extraction_id: str,
                        facts: Sequence[DocumentaryFact], *,
-                       pages: Mapping[str, tuple[int, ...]] | None = None) -> ExtractionConcepts:
+                       pages: Mapping[str, tuple[int, ...]] | None = None,
+                       extractor_name: str = "", extractor_revision: str = "") -> ExtractionConcepts:
     """Group by full occurrence prefix within exactly one extraction/version."""
     unique: dict[str, DocumentaryFact] = {}
     for fact in facts:
@@ -87,7 +90,8 @@ def project_extraction(document_id: str, version_id: str, extraction_id: str,
             references.append((key, item))
     return ExtractionConcepts(document_id, version_id, extraction_id,
         tuple(ConceptOccurrence(document_id, version_id, extraction_id, prefix, tuple(attrs))
-              for prefix, attrs in sorted(grouped.items())), tuple(references), tuple(evidence))
+              for prefix, attrs in sorted(grouped.items())), tuple(references), tuple(evidence),
+        extractor_name, extractor_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,13 +103,19 @@ class DocumentConcepts:
 
 def load_document_concepts(database: Path, document_id: str) -> DocumentConcepts:
     """Complete read-only document snapshot, including empty extractions and all versions."""
-    result = []
     with open_inspector(database) as inspector:
-        detail = inspector.document(document_id)
-        for version in detail['versions']:
-            for extraction in version['extractions']:
-                facts = inspector.extraction_facts(extraction.extraction_id)
-                pages = {f.fact_id: tuple(p.page_number for p in inspector.fact_pages(f.fact_id)) for f in facts}
-                result.append(project_extraction(document_id, version['version'].version_id,
-                                                 extraction.extraction_id, facts, pages=pages))
+        return read_document_concepts(inspector, document_id)
+
+
+def read_document_concepts(inspector: CanonicalInspector, document_id: str) -> DocumentConcepts:
+    """Reuse an existing read-only snapshot for a contextual set of documents."""
+    result = []
+    detail = inspector.document(document_id)
+    for version in detail['versions']:
+        for extraction in version['extractions']:
+            facts = inspector.extraction_facts(extraction.extraction_id)
+            pages = {f.fact_id: tuple(p.page_number for p in inspector.fact_pages(f.fact_id)) for f in facts}
+            result.append(project_extraction(document_id, version['version'].version_id,
+                extraction.extraction_id, facts, pages=pages, extractor_name=extraction.extractor_name,
+                extractor_revision=extraction.extractor_revision))
     return DocumentConcepts(document_id, tuple(v['version'].version_id for v in detail['versions']), tuple(result))
