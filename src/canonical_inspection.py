@@ -14,6 +14,7 @@ from src.canonical.certification import (
     certify_observation,
 )
 from src.canonical.economics import ObservationEvidence
+from src.canonical.facts import DocumentaryFact, FactPageReference
 from src.canonical.values import ExactDecimal
 from src.persistence import CanonicalSQLiteError, connect, verify_schema
 from src.persistence.economics import EconomicRepository
@@ -398,6 +399,16 @@ class CanonicalInspector:
         ids = self._ids('documentary_facts', 'fact_id', {
             'extraction_id': extraction_id, 'fact_key': fact_key, 'value_state': value_state}, limit)
         return [_required(self._repo.get_fact(i), 'Fact') for i in ids]
+
+    def extraction_facts(self, extraction_id: str) -> tuple[DocumentaryFact, ...]:
+        """Complete extraction for documentary reading, without the search result cap."""
+        _required(self._repo.get_extraction(extraction_id), 'Extraction')
+        return self._repo.get_extraction_facts(extraction_id)
+
+    def fact_pages(self, fact_id: str) -> tuple[FactPageReference, ...]:
+        """Only registered physical references, never inferred version-wide pages."""
+        _required(self._repo.get_fact(fact_id), 'Fact')
+        return self._repo.get_fact_page_references(fact_id)
 
     def _version(self, identity: str) -> dict[str, Any]:
         version = _required(self._repo.get_version(identity), 'Version')

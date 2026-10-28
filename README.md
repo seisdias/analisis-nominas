@@ -105,7 +105,7 @@ restringir a un documento. La media opcional mantiene sus contratos, no incluye
 meses multipago y no equivale a salario certificado. La ficha muestra los estados
 del inspector, el contexto económico registrado y los hechos por versión y
 extracción, sin resolver versiones ni interpretar conceptos. Las tablas de hechos
-están limitadas explícitamente a 1.000 por extracción. Los identificadores completos,
+se consultan completas por extracción, sin truncar las ocurrencias de conceptos. Los identificadores completos,
 SHA y relaciones de soporte quedan accesibles en desplegables.
 
 ### Evolución histórica documental
@@ -360,3 +360,43 @@ Se oculta junto a la serie ordinaria. Sin clasificación ordinaria fiable no se 
 la antigua referencia sobre documentos sin clasificar. Se mantienen los requisitos de
 12 meses válidos consecutivos y las exclusiones por multipago, huecos y contexto incompleto.
 Ninguna referencia constituye salario certificado ni autoriza sumar ingresos.
+
+
+### Explorador de conceptos internos (D.2.3-A)
+
+Al seleccionar un documento en **Panel de análisis**, la ficha conserva el resumen
+certificado y añade **Desglose documental de conceptos**. Las partidas se presentan
+por devengos, deducciones u otros/grupo desconocido, manteniendo la denominación,
+código, columna y categoría originales. Unidades, precio, porcentaje y base solo
+ocupan columnas cuando hay información disponible. Las unidades no se interpretan
+como días u horas. Los importes usan formato español y solo muestran un código de
+moneda cuando está registrado: no se añade EUR a la evidencia.
+
+Las filas se reconstruyen exclusivamente por documento, versión, extracción y
+ocurrencia (`nomina.conceptos.<grupo>.<ocurrencia>.<campo>` o
+`payload/conceptos/<posición>/<campo>`). Los códigos y etiquetas repetidos conservan
+filas distintas. No se fusionan los dos vocabularios ni distintas extracciones.
+Los estados desconocido, no extraído, no presente, no aplicable, no fiable y nulo
+técnico nunca se convierten en cero; los candidatos no fiables permanecen en la
+trazabilidad con su motivo, sin presentarse como cantidades disponibles.
+
+Con una única versión se muestra directamente su desglose. Con varias, el selector
+**Versión para consultar** comienza sin elección y permite una inspección local.
+No modifica resoluciones ALTEN, importes certificados, elegibilidad ni filtros del
+panel. Las extracciones de la versión se muestran separadas. Incluso una versión
+sin extracciones permanece en el selector; no se elige otra por omisión.
+
+Los **Datos complementarios y de referencia** muestran escalares disponibles,
+incluyendo bases, IRPF y prorratas. Pueden repetir el desglose y nunca representan
+pagos adicionales. Si no existe una lista de conceptos —como sucede en Coritel e
+INSIS4— se explica expresamente y se conservan estos campos, sin reconstruir partidas.
+
+Los desplegables permiten consultar identificadores completos, claves, estados,
+motivos y páginas asociadas a cada hecho. El visor avanzado conserva todos los
+hechos de todas las extracciones, diferenciadas por versión; no hay caché documental.
+La lectura completa utiliza APIs del inspector, sin consultas SQL en la presentación.
+
+Este incremento no certifica conceptos, suma importes, calcula neto de bonus ni
+reinterpreta bruto/neto. **D.2.3-B** queda pendiente: selección de familias y magnitudes,
+gráficos de conceptos y sus contratos de comparabilidad y representación. Las gráficas
+actuales y las categorías documentales no cambian.
