@@ -11,6 +11,7 @@ from src.analytic_dataset import DocumentCategory, read_analytic_dataset
 from src.canonical.values import CanonicalValue, ValueState
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
+from src.component_view import TOTALS_DESCRIPTION, component_restrictions, render_components
 from src.concepts_view import render_concepts
 from src.coverage_view import CATEGORIES, REASONS, _details
 from src.document_explorer import format_amount
@@ -200,6 +201,8 @@ def render_panel() -> None:
         st.button('Volver al contexto', key='panel_back', on_click=_clear_document)
         try:
             _detail(config.database, context.documents[0], snapshot)
+            render_components(config.database, [d.document for d in context.documents],
+                              component_restrictions(timeline.table), key="panel_components")
         except InspectionError:
             st.error('No se pudo recuperar el soporte documental; no se ha cambiado la selección.')
         return
@@ -211,12 +214,14 @@ def render_panel() -> None:
     visible = visible_timeline(timeline, categories)
     if context.level != 'month' and len(context.months) > 1:
         st.subheader('Evolución documental individual')
+        st.caption(TOTALS_DESCRIPTION)
         show_average = st.checkbox('Mostrar media móvil de 12 meses', key='panel_average', persist_state='session')
         averages = category_average(timeline.points, snapshot.timeline,
             classified=True) if show_average else []
         if CATEGORY_LABELS[DocumentCategory.ORDINARY] not in categories:
             averages = []
         if show_average:
+            st.caption('Referencia de totales documentales completos: no descuenta bonus, extras ni prorratas; no es salario recurrente.')
             st.caption(f'{len(averages)} puntos de media orientativa; no es salario certificado ni prorrateado. '
                        'Exige 12 meses consecutivos válidos, sin multipago, huecos ni mezcla de categorías.')
         if visible.points:
@@ -225,6 +230,8 @@ def render_panel() -> None:
                                           f'{end[0]:04d}-{end[1]:02d}-01', averages), width='stretch')
         else:
             st.info('Sin puntos representables; los documentos siguen disponibles en la tabla.')
+    render_components(config.database, [d.document for d in context.documents],
+                      component_restrictions(timeline.table), key='panel_components')
     st.subheader('Registros económicos visibles')
     st.dataframe(friendly_timeline_rows(visible.table), hide_index=True, column_config={
         'Importe': st.column_config.TextColumn(alignment='right')})

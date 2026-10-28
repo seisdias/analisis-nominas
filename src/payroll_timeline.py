@@ -15,6 +15,7 @@ from src.analytic_dataset import AnalyticDocument, DocumentCategory, load_analyt
 from src.canonical.values import ValueState
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
+from src.component_view import TOTALS_DESCRIPTION, component_restrictions, render_components
 from src.document_explorer import PRESENTATION_CURRENCY, STATUS_LABELS, format_amount
 from src.gui_presentation import format_period, friendly_timeline_rows, short_id
 
@@ -348,6 +349,7 @@ def render_timeline_details(rows: list[dict[str, Any]], dataset: Sequence[Analyt
 def render_timeline() -> None:
     st.title('Evolución histórica de nóminas')
     st.caption('Evolución documental, no agregación certificada')
+    st.caption(TOTALS_DESCRIPTION)
     try:
         config = load_config()
         with open_inspector(config.database) as inspector:
@@ -396,6 +398,7 @@ def render_timeline() -> None:
     if CATEGORIES[0] not in categories:
         averages = []
     if show_average:
+        st.caption('Referencia de totales documentales completos: no descuenta bonus, extras ni prorratas; no es salario recurrente.')
         st.caption('Media sobre nóminas ordinarias identificadas por C.1.' if classified else
                    'Referencia no disponible: faltan nóminas ordinarias con clasificación fiable.')
         st.caption('Media estadística orientativa basada en observaciones documentales. '
@@ -416,6 +419,12 @@ def render_timeline() -> None:
         'Documento': st.column_config.TextColumn(width='large'),
     })
     render_timeline_details(result.table, dataset)
+    guards = full if tuple(selected) == SERIES else classified_timeline(
+        records, dataset, years=years, company=company,
+        withheld_document_ids=frozenset(config.withheld_document_ids))
+    context_ids = {r['Documento'] for r in guards.table}
+    render_components(config.database, [d for d in dataset if d.document_id in context_ids],
+                      component_restrictions(guards.table), key='timeline_components')
     with st.expander('Trazabilidad y ambigüedades'):
         st.write('Las categorías proceden del dataset C.1 y se enlazan solo por identificador completo. '
                  'Sin correspondencia única se muestra «Documentos sin clasificar». Extras, variables, '
