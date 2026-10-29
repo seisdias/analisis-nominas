@@ -462,3 +462,69 @@ pero no generan componentes mediante diferencias matemáticas. **D.2.3-B2** qued
 para otras familias y correspondencias justificadas. **D.2.3-C** deberá definir el contrato
 para series de conceptos multiversión; B1 no aplica a partidas parciales las resoluciones
 de totales ALTEN. No se crean observaciones ni se modifica SQLite.
+
+### Clasificación y conciliación económica (D.2.3-B2a)
+
+La ficha añade una sección **Clasificación y conciliación económica**, independiente
+de las categorías documentales, totales certificados y series B1. Se muestra para la
+versión seleccionada y para cada extracción por separado; no se crea una vista económica
+combinada de versiones. Los hechos originales y su visor avanzado permanecen disponibles.
+
+La clasificación inmutable separa **naturaleza contable** (devengo, deducción, base,
+información, desconocida), **función económica**, **marca documental de atraso**,
+**periodicidad** y **relación con los totales**. Un salario base identificado no implica
+un salario mensual fijo comparable. Las periodicidades permanecen desconocidas: repetir
+una partida no acredita un compromiso contractual. Beneficios documentados y bonus son
+funciones distintas; un beneficio marcado como atraso conserva ambos atributos.
+
+Las correspondencias exigen extractor, código, denominación, categoría, columna y marca
+de atraso exactos. B1 sigue siendo la única fuente de sus correspondencias: B2a reutiliza
+`component_label`, sin ampliar los puntos representables de B1. Las nuevas reglas cubren
+salarios base, complementos identificados, retenciones, cotizaciones, algunas ayudas y
+regularizaciones explícitas de INECO, Exceltic, Altran y ALTEN. Las variantes no previstas
+permanecen **No clasificables**. No se usan empresa, fecha, frecuencia o importe para inferir
+una función; no se homologan conceptos entre empresas. Las reglas no importan ni ejecutan
+los parsers y no modifican la evidencia.
+
+Las referencias escalares nunca se añaden a la lista de partidas. Bases y porcentajes son
+referencias; las prorratas de cotización solo se identifican como tales en los campos y
+extractores cuya sección se ha comprobado (INECO, Exceltic y Altran). Los totales de una
+extra independiente se identifican mediante el tipo explícito de la misma extracción.
+Códigos y etiquetas repetidos conservan ocurrencias distintas. Las posibles discrepancias
+entre determinados escalares y su fila única se advierten sin corregir valores ni obtener
+residuos salariales.
+
+**Contrato de conciliación:** `reconcile(extraction, contract=None)` diagnostica devengos,
+deducciones y relación bruto/neto exclusivamente dentro de una extracción. El contrato
+explícito `ReconciliationContract` es una entrada de confianza del llamador: debe estar
+revisado, referenciado y vinculado al nombre y revisión exactos del extractor. Debe
+acreditar completitud, aditividad, convención de signos, unidad común y, para bruto/neto,
+la compatibilidad de la fórmula. No se crea a partir de una igualdad numérica ni se
+expone como casilla de autorización en la interfaz. El contrato admitido exige combinar
+los importes con su signo documentado y restar las deducciones del bruto; formatos con
+otra convención no se activan. Una proyección recortada respecto a los hechos de la
+extracción se rechaza como conflicto, aunque el llamador aporte un contrato.
+
+**No hay contratos de completitud activados para el corpus privado.** La existencia de
+filas y límites de tabla en un parser no se ha aprobado como garantía de exhaustividad
+de cada extracción persistida. Por ello la ficha no calcula conciliaciones ni residuos
+por defecto: muestra **Desglose incompleto**, **No evaluable** o **Conflicto documental**
+y sus motivos. Antes de activar un formato habrá que justificar documentalmente su
+cobertura y signos; no basta con comprobar que la suma coincide.
+
+El motor está probado con contratos sintéticos completos. Cuando existe soporte válido,
+calcula exactamente con coeficientes enteros y resultados `Decimal`, sin `float`,
+tolerancias ni redondeo dependiente del contexto decimal. Conserva fórmula, participantes,
+total objetivo, documento, versión, extracción, referencia del contrato y diferencia.
+Una diferencia se denomina **Diferencia no explicada**, nunca bonus o salario inferido.
+Una igualdad no certifica partidas. Moneda ausente no se convierte en EUR, un grupo
+sin partidas no se rellena con cero y los totales alternativos no se eligen por importe.
+Los resultados distinguen documentado, calculado, estimado y no determinable; B2a no
+emite estimaciones ni escribe derivados en SQLite.
+
+Quedan fuera de este incremento:
+
+- **B2b:** descomposición retributiva y fijo comparable, condicionados a contratos suficientes.
+- **C:** selección/resolución autorizada de conceptos multiversión para series; B1 sigue excluyéndolos.
+- **B2c:** gráficas normalizadas y equivalencias salariales entre 12 y 14 pagas.
+- **D.2.5:** comparabilidad de IRPF, cotizaciones y bases; su identificación actual no la acredita.
