@@ -63,6 +63,14 @@ def _text(c: ConceptOccurrence, field: str) -> str:
     return str(e.fact.value.value) if e and e.fact.value.state == ValueState.PRESENT else ""
 
 
+def component_label(extractor: str, concept: ConceptOccurrence) -> str | None:
+    """The single B1 correspondence catalog, also reusable for analytical roles."""
+    if _text(concept, 'columna') != 'devengos':
+        return None
+    return _RULES.get((extractor, _text(concept, 'codigo'), _text(concept, 'concepto'),
+                       _text(concept, 'categoria'), _text(concept, 'atraso')))
+
+
 def project_components(documents: Sequence[AnalyticDocument], sources: Mapping[str, DocumentConcepts],
                        blocked: Mapping[str, str]) -> ComponentProjection:
     """Full-context restrictions precede visibility. Never choose versions/extractions."""
@@ -96,8 +104,7 @@ def project_components(documents: Sequence[AnalyticDocument], sources: Mapping[s
             continue
         matched = False
         for c in sorted(extraction.concepts, key=lambda c: c.occurrence):
-            component = _RULES.get((extraction.extractor_name, _text(c,'codigo'), _text(c,'concepto'),
-                                   _text(c,'categoria'), _text(c,'atraso')))
+            component = component_label(extraction.extractor_name, c)
             if component is None or _text(c,'columna') != 'devengos':
                 continue
             matched = True

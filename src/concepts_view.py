@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.canonical.values import ValueState
+from src.classification_view import render_classification
 from src.document_concepts import (
     REFERENCE_FIELDS,
     ConceptOccurrence,
@@ -105,6 +106,7 @@ def render_concepts(database: Path, document_id: str) -> None:
                        'Una prorrata informativa o una base no se interpreta como devengo.')
             st.dataframe(references, hide_index=True, column_config={
                 'Valor documental': st.column_config.TextColumn(alignment='right')})
+        render_classification(extraction)
         _trace(extraction)
     with st.expander('Visor completo de hechos documentales · investigación avanzada'):
         for extraction in extractions:
