@@ -61,12 +61,14 @@ class ExtractionConcepts:
     facts: tuple[FactEvidence, ...]
     extractor_name: str = ""
     extractor_revision: str = ""
+    content_hash: str = ""
 
 
 def project_extraction(document_id: str, version_id: str, extraction_id: str,
                        facts: Sequence[DocumentaryFact], *,
                        pages: Mapping[str, tuple[int, ...]] | None = None,
-                       extractor_name: str = "", extractor_revision: str = "") -> ExtractionConcepts:
+                       extractor_name: str = "", extractor_revision: str = "",
+                       content_hash: str = "") -> ExtractionConcepts:
     """Group by full occurrence prefix within exactly one extraction/version."""
     unique: dict[str, DocumentaryFact] = {}
     for fact in facts:
@@ -91,7 +93,7 @@ def project_extraction(document_id: str, version_id: str, extraction_id: str,
     return ExtractionConcepts(document_id, version_id, extraction_id,
         tuple(ConceptOccurrence(document_id, version_id, extraction_id, prefix, tuple(attrs))
               for prefix, attrs in sorted(grouped.items())), tuple(references), tuple(evidence),
-        extractor_name, extractor_revision)
+        extractor_name, extractor_revision, content_hash)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,5 +119,5 @@ def read_document_concepts(inspector: CanonicalInspector, document_id: str) -> D
             pages = {f.fact_id: tuple(p.page_number for p in inspector.fact_pages(f.fact_id)) for f in facts}
             result.append(project_extraction(document_id, version['version'].version_id,
                 extraction.extraction_id, facts, pages=pages, extractor_name=extraction.extractor_name,
-                extractor_revision=extraction.extractor_revision))
+                extractor_revision=extraction.extractor_revision, content_hash=extraction.content_hash))
     return DocumentConcepts(document_id, tuple(v['version'].version_id for v in detail['versions']), tuple(result))

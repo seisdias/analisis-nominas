@@ -505,12 +505,17 @@ los importes con su signo documentado y restar las deducciones del bruto; format
 otra convención no se activan. Una proyección recortada respecto a los hechos de la
 extracción se rechaza como conflicto, aunque el llamador aporte un contrato.
 
-**No hay contratos de completitud activados para el corpus privado.** La existencia de
-filas y límites de tabla en un parser no se ha aprobado como garantía de exhaustividad
-de cada extracción persistida. Por ello la ficha no calcula conciliaciones ni residuos
-por defecto: muestra **Desglose incompleto**, **No evaluable** o **Conflicto documental**
-y sus motivos. Antes de activar un formato habrá que justificar documentalmente su
-cobertura y signos; no basta con comprobar que la suma coincide.
+**Contratos B2b.1:** la ficha evalúa completitud por sección mediante
+`breakdown_completeness.diagnose_breakdown()`. INECO y Exceltic tienen contratos
+acotados a las revisiones exactas revisadas, con verificación del hash de todos los
+hechos, estructura de filas, signos, unidad y total de la misma extracción.
+Altran conserva cobertura de filas, pero no participación acreditada en los totales;
+ALTEN no conserva revisión del parser original en su puente legado. Ambos permanecen
+no evaluables, al igual que los formatos sin desglose Coritel e INSIS4.
+Una sección puede conciliar mientras otra no es evaluable. La ficha muestra
+completitud, contrato, componentes, total y diferencia, con trazabilidad desplegable.
+**Conciliado aritméticamente no equivale a certificado económicamente.**
+Véanse [justificaciones y límites](docs/breakdown-contracts.md).
 
 El motor está probado con contratos sintéticos completos. Cuando existe soporte válido,
 calcula exactamente con coeficientes enteros y resultados `Decimal`, sin `float`,
@@ -524,7 +529,7 @@ emite estimaciones ni escribe derivados en SQLite.
 
 Quedan fuera de este incremento:
 
-- **B2b:** descomposición retributiva y fijo comparable, condicionados a contratos suficientes.
+- **B2b.2:** descomposición retributiva y fijo comparable, condicionados a contratos suficientes.
 - **C:** selección/resolución autorizada de conceptos multiversión para series; B1 sigue excluyéndolos.
 - **B2c:** gráficas normalizadas y equivalencias salariales entre 12 y 14 pagas.
 - **D.2.5:** comparabilidad de IRPF, cotizaciones y bases; su identificación actual no la acredita.
