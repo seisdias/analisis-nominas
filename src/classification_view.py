@@ -1,11 +1,13 @@
 """Read-only analytical interpretation within one selected extraction."""
 
+from decimal import Decimal
+
 import streamlit as st
 
-from src.canonical.values import ValueState
+from src.breakdown_completeness import diagnose_breakdown
+from src.canonical.values import ExactDecimal, ValueState
 from src.document_concepts import REFERENCE_FIELDS, ExtractionConcepts
 from src.economic_classification import Function, Knowledge, classify_extraction
-from src.salary_reconciliation import reconcile
 
 
 def render_classification(extraction: ExtractionConcepts) -> None:
@@ -42,11 +44,24 @@ def render_classification(extraction: ExtractionConcepts) -> None:
         st.dataframe(rows, hide_index=True)
     for issue in classification.issues:
         st.caption(issue)
-    diagnostics = reconcile(extraction)
+    report = diagnose_breakdown(extraction)
+    diagnostics = report.diagnostics
+
+    def number(value: Decimal | None) -> str:
+        return format(value, "f").replace(".", ",") if value is not None else "Sin cálculo"
+
     st.dataframe(
         [
             {
                 "Comprobación": d.magnitude,
+                "Estado de completitud": report.completeness[index].state.value
+                if index < 2 else "Requiere ambas secciones y relación bruto/neto",
+                "Contrato": d.contract_reference.split(":", 1)[0]
+                if d.contract_reference else "Sin contrato aplicable",
+                "Total de componentes": number(d.calculated),
+                "Total documental": number(d.target.fact.value.value.to_decimal())
+                if d.target and d.target.fact.value.state == ValueState.PRESENT
+                and isinstance(d.target.fact.value.value, ExactDecimal) else "No disponible",
                 "Diagnóstico": d.status.value,
                 "Diferencia no explicada": format(d.difference, "f").replace(".", ",")
                 if d.difference is not None
@@ -54,13 +69,15 @@ def render_classification(extraction: ExtractionConcepts) -> None:
                 "Naturaleza del resultado": d.knowledge.value,
                 "Limitación": d.reason,
             }
-            for d in diagnostics
+            for index, d in enumerate(diagnostics)
         ],
         hide_index=True,
     )
     st.caption(
-        "No hay contratos de completitud y signos activados para el corpus. No se calcula un residuo "
-        "ni se atribuye a bonus o salario fijo. La moneda ausente continúa sin acreditar; no se infiere EUR."
+        "Conciliado aritméticamente no equivale a certificado económicamente. "
+        "Cobertura de filas no acredita completitud. Las secciones se evalúan por separado. "
+        "Se usa la unidad monetaria local de la tabla, sin inferir EUR cuando falta la divisa. "
+        "Una diferencia permanece sin explicar; no se atribuye a bonus o salario fijo."
     )
     with st.expander("Funciones de referencia y contrato de conciliación"):
         if classification.references:
@@ -93,8 +110,26 @@ def render_classification(extraction: ExtractionConcepts) -> None:
                     "Fórmula diagnóstica": d.formula,
                     "Versión": d.version_id,
                     "Extracción": d.extraction_id,
+                    "Documento": d.document_id,
+                    "Contrato y justificación": d.contract_reference or "No acreditado",
+                    "Hecho total": d.target.fact.fact_id if d.target else "No disponible",
                 }
                 for d in diagnostics
             ],
             hide_index=True,
         )
+
+        st.dataframe(
+            [{"Sección": c.section.value, "Estado": c.state.value,
+              "Factores de rechazo": ", ".join(c.reasons) or "Ninguno",
+              "Ocurrencias no participantes": ", ".join(c.excluded)}
+             for c in report.completeness], hide_index=True,
+        )
+        participants = [
+            {"Sección": d.magnitude, "Hecho participante": f.fact.fact_id,
+             "Clave": f.fact.fact_key, "Extracción": f.fact.extraction_id,
+             "Páginas conocidas": ", ".join(map(str, f.pages)) or "Sin página exacta"}
+            for d in diagnostics for f in d.participants
+        ]
+        if participants:
+            st.dataframe(participants, hide_index=True)

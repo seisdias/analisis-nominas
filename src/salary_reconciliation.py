@@ -1,4 +1,4 @@
-"""Exact, non-persistent diagnostics. No production completeness contract is enabled."""
+"""Exact, non-persistent diagnostics. Reviewed completeness contracts are supplied separately."""
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -22,8 +22,9 @@ class ReconciliationContract:
     """Trusted caller's reviewed extraction contract, NOT a numerical equality flag.
 
     A nonempty evidence reference must document coverage, signs and units for the
-    exact extractor revision. UI supplies none: persisted evidence currently does
-    not establish these guarantees. Never construct from an observed sum/residue.
+    exact extractor revision. The UI obtains it from the reviewed completeness
+    evaluator, never from a numerical equality or an authorization checkbox.
+    Never construct from an observed sum/residue.
     """
 
     extractor_name: str
@@ -108,7 +109,7 @@ def reconcile(
     }
     groups: dict[str, list[FactEvidence]] = {"devengos": [], "deducciones": []}
     unknown_column = False
-    missing_amount = False
+    missing_amount: set[str] = set()
     for c in sorted(e.concepts, key=lambda c: c.occurrence):
         column = c.get("columna")
         amount = c.get("importe")
@@ -116,7 +117,7 @@ def reconcile(
             unknown_column = True
         elif column.fact.value.value in groups:
             if amount is None:
-                missing_amount = True
+                missing_amount.add(str(column.fact.value.value))
             else:
                 groups[str(column.fact.value.value)].append(amount)
         elif column.fact.value.value not in ("bases", "informacion"):
@@ -192,7 +193,10 @@ def reconcile(
             reason = "El contrato no corresponde a esta extracción"
         elif not target or (label == "Bruto/neto" and len(parts) != 2):
             pass
-        elif not e.concepts or unknown_column or missing_amount:
+        elif not e.concepts or unknown_column or (
+            bool(missing_amount) if label == "Bruto/neto"
+            else ("devengos" if label == "Devengos" else "deducciones") in missing_amount
+        ):
             status = Status.INCOMPLETE
             reason = "Lista ausente, columna desconocida o partida sin importe"
         elif invalid_values:
