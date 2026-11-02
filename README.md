@@ -529,7 +529,41 @@ emite estimaciones ni escribe derivados en SQLite.
 
 Quedan fuera de este incremento:
 
-- **B2b.2:** descomposición retributiva y fijo comparable, condicionados a contratos suficientes.
+- **B2b.2:** implementado a continuación; la activación de contratos salariales reales requiere evidencia adicional.
 - **C:** selección/resolución autorizada de conceptos multiversión para series; B1 sigue excluyéndolos.
-- **B2c:** gráficas normalizadas y equivalencias salariales entre 12 y 14 pagas.
+- **B2c:** gráficas normalizadas sobre equivalencias acreditadas; no agregación automática.
 - **D.2.5:** comparabilidad de IRPF, cotizaciones y bases; su identificación actual no la acredita.
+
+
+### Reconstrucción retributiva (D.2.3-B2b.2)
+
+La ficha incorpora **Reconstrucción retributiva** por extracción y versión seleccionada.
+Reutiliza B2a y B1 para separar candidatos a fijo, extras incluidas, prorratas de devengos,
+bonus, atrasos, otras partidas y conceptos pendientes. Los totales de extras independientes
+son referencias: nunca se añaden al desglose. Bases, prorratas de cotización y escalares
+repetidos no son componentes adicionales. Las cantidades ausentes o no fiables conservan
+su estado, y los códigos repetidos conservan sus ocurrencias.
+
+`salary_reconstruction.reconstruct()` es una función pura: devuelve partidas trazables,
+conciliación B2b.1 y resultados con cobertura, fórmula, evidencia y motivo de indisponibilidad.
+Los contratos de fijo, modalidad y equivalencia son independientes. Un bonus explícito
+puede leerse sin conciliación global; un salario base identificado **no es fijo total**.
+No se usa neto, frecuencia de aparición, fecha, empresa, picos ni residuos para fabricar fijo.
+
+**No hay contratos retributivos de producción activados.** La completitud contable de una
+tabla no acredita recurrencia contractual, mensualidad completa ni composición anual de
+extras. La aplicación muestra componentes documentados y explica por qué no puede calcular
+fijo completo o equivalentes. No ofrece controles para convertir hipótesis en acreditaciones.
+Los escenarios sintéticos prueban cobertura parcial/completa y estructuras de doce
+mensualidades con prorratas o doce ordinarias más extras explícitas, de composición distinta.
+
+Cuando un llamante revisado aporta evidencia suficiente, el motor calcula fijo identificado,
+fijo anual equivalente y equivalente mensual en doce mensualidades. Conserva el cociente
+exacto como numerador `Decimal` y divisor entero; el redondeo a dos decimales (`ROUND_HALF_UP`)
+es exclusivamente visual. No infiere EUR. Una equivalencia anual describe la estructura
+vigente y **no es el total cobrado durante el ejercicio**. No se generan estimaciones.
+
+Véanse los [contratos retributivos, fórmulas y límites](docs/salary-reconstruction-contracts.md).
+No se modifican cobertura, gráficos B1, restricciones locales, clasificaciones, certificados,
+resoluciones ni SQLite. Las versiones se diagnostican por separado y no se consolidan:
+D.2.3-C abordará esa política, B2c las gráficas normalizadas y D.2.5 las familias fiscales.
