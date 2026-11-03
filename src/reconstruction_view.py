@@ -4,7 +4,7 @@ import streamlit as st
 
 from src.document_concepts import ExtractionConcepts
 from src.gui_presentation import canonical_value_text
-from src.salary_reconstruction import reconstruct
+from src.salary_reconstruction import identified_ordinary, reconstruct
 
 
 def render_reconstruction(extraction: ExtractionConcepts) -> None:
@@ -54,7 +54,7 @@ def render_reconstruction(extraction: ExtractionConcepts) -> None:
             ],
             hide_index=True,
         )
-    indicators = (r.fixed, r.monthly, r.annual)
+    indicators = (identified_ordinary(extraction), r.fixed, r.monthly, r.annual)
     available = [i for i in indicators if i.amount is not None]
     if available:
         st.dataframe(
@@ -69,7 +69,7 @@ def render_reconstruction(extraction: ExtractionConcepts) -> None:
             ],
             hide_index=True,
         )
-    else:
+    if r.fixed.amount is None:
         st.info(
             "No hay cobertura contractual del fijo ni periodicidad suficientes para calcular "
             "un salario fijo completo o equivalentes mensual/anual. Las partidas identificadas siguen disponibles."

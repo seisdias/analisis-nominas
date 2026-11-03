@@ -567,3 +567,37 @@ Véanse los [contratos retributivos, fórmulas y límites](docs/salary-reconstru
 No se modifican cobertura, gráficos B1, restricciones locales, clasificaciones, certificados,
 resoluciones ni SQLite. Las versiones se diagnostican por separado y no se consolidan:
 D.2.3-C abordará esa política, B2c las gráficas normalizadas y D.2.5 las familias fiscales.
+
+
+### Primera evolución de ingresos ordinarios (D.2.3-B2b.3)
+
+En **Panel de análisis → Evolución retributiva identificada**, los filtros de empresa
+exacta y periodo delimitan una comparación entre bruto documental, ordinario identificado
+**parcial**, extras, prorratas, bonus y atrasos. El selector **Series de retribución visibles**
+es independiente de las categorías y componentes B1; tiene restablecimiento propio y
+conserva preferencias al volver de la ficha. Ocultar series no cambia el inventario ni
+resuelve restricciones. En un único mes se presenta una tabla, sin una evolución artificial.
+
+La suma ordinaria de INECO incluye las filas explícitas no atrasadas de salario base,
+plus convenio, antigüedad y complemento salarial. La de Exceltic incluye salario base,
+plus convenio y mejora voluntaria. Sólo se habilita para revisiones acreditadas por B2b.1
+con devengos conciliados de la misma extracción. **No se obtiene restando extras al bruto**,
+no incorpora prorratas/bonus/ayudas/atrasos ni convierte esos complementos en fijos recurrentes.
+La comparación exige que el total de esa extracción pertenezca al soporte del bruto
+representado. La ficha muestra también el resultado parcial y su contrato.
+
+Todos los componentes se muestran como puntos: no se interpolan huecos ni se enlazan
+sumas parciales como salario completo. Los gráficos originales permanecen intactos.
+Los detalles permiten inspeccionar importe exacto, fórmula, cobertura, hechos, versión,
+extracción y páginas. La conversión numérica para dibujar no interviene en el cálculo
+`Decimal`; el tooltip conserva todos los decimales del resultado. Las unidades se separan
+visualmente y las divisas explícitas incompatibles se excluyen sin conversión.
+
+**Fijo completo y equivalente anual siguen sin acreditarse en producción.** Un intervalo
+mensual impreso y una prorrata explícita no prueban por sí solos jornada, recurrencia ni
+composición anual de extras. La explicación completa de un desglose significa conciliación
+y funciones identificadas, no acreditación de salario habitual ni causa de una subida.
+
+Véase [contrato de ordinario parcial y diagnóstico de picos](docs/ordinary-income-contracts.md).
+No se incorporan estimaciones, datos derivados a SQLite, nuevas certificaciones ni
+consolidación multiversión. D.2.3-C y B2c conservan sus requisitos de evidencia adicionales.

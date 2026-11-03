@@ -22,6 +22,7 @@ from src.gui_presentation import (
     friendly_timeline_rows,
     short_id,
 )
+from src.income_view import render_income
 from src.payroll_timeline import (
     CATEGORY_LABELS,
     Timeline,
@@ -230,6 +231,9 @@ def render_panel() -> None:
                                           f'{end[0]:04d}-{end[1]:02d}-01', averages), width='stretch')
         else:
             st.info('Sin puntos representables; los documentos siguen disponibles en la tabla.')
+    render_income(config.database, [d.document for d in context.documents],
+                  component_restrictions(timeline.table), timeline.points, key='panel_income',
+                  show_chart=context.level != 'month' and len(context.months) > 1)
     render_components(config.database, [d.document for d in context.documents],
                       component_restrictions(timeline.table), key='panel_components')
     st.subheader('Registros económicos visibles')

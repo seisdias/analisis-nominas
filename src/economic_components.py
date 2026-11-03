@@ -6,7 +6,12 @@ from typing import Any
 
 from src.analytic_dataset import AnalyticDocument, DocumentCategory
 from src.canonical.values import ExactDecimal, ValueState
-from src.document_concepts import ConceptOccurrence, DocumentConcepts, FactEvidence
+from src.document_concepts import (
+    ConceptOccurrence,
+    DocumentConcepts,
+    ExtractionConcepts,
+    FactEvidence,
+)
 from src.gui_presentation import canonical_value_text, format_period
 
 CONTRACT = 'documentary-components/d2.3-b1-v1'
@@ -71,6 +76,25 @@ def component_label(extractor: str, concept: ConceptOccurrence) -> str | None:
                        _text(concept, 'categoria'), _text(concept, 'atraso')))
 
 
+def component_extraction(doc: AnalyticDocument, source: DocumentConcepts | None) -> ExtractionConcepts | str:
+    """Shared B1 provenance guard. Does not authorize any new economic formula."""
+    identity = doc.document_id
+    if (len(doc.provenance) != 1 or source is None or source.document_id != identity
+            or source.version_ids != (doc.provenance[0].version_id,)):
+        return 'Procedencia documental incompleta o incompatible'
+    extractions = [e for e in source.extractions if e.concepts]
+    if len(extractions) != 1:
+        return ('Desglose no disponible' if not extractions else
+                'Varias extracciones con conceptos: sin selección autorizada')
+    extraction = extractions[0]
+    if (extraction.extraction_id not in doc.provenance[0].extraction_ids
+            or extraction.version_id != source.version_ids[0]
+            or extraction.document_id != identity
+            or len({c.occurrence.split('conceptos')[0] for c in extraction.concepts}) != 1):
+        return 'Trazabilidad o vocabulario de conceptos no inequívoco'
+    return extraction
+
+
 def project_components(documents: Sequence[AnalyticDocument], sources: Mapping[str, DocumentConcepts],
                        blocked: Mapping[str, str]) -> ComponentProjection:
     """Full-context restrictions precede visibility. Never choose versions/extractions."""
@@ -85,23 +109,11 @@ def project_components(documents: Sequence[AnalyticDocument], sources: Mapping[s
         if reason:
             omitted.add((identity, reason))
             continue
-        source = sources.get(identity)
-        if (source is None or source.document_id != identity
-                or source.version_ids != (doc.provenance[0].version_id,)):
-            omitted.add((identity, 'Procedencia documental incompleta o incompatible'))
+        selected = component_extraction(doc, sources.get(identity))
+        if isinstance(selected, str):
+            omitted.add((identity, selected))
             continue
-        extractions = [e for e in source.extractions if e.concepts]
-        if len(extractions) != 1:
-            omitted.add((identity, 'Desglose no disponible' if not extractions else
-                         'Varias extracciones con conceptos: sin selección autorizada'))
-            continue
-        extraction = extractions[0]
-        if (extraction.extraction_id not in doc.provenance[0].extraction_ids
-                or extraction.version_id != source.version_ids[0]
-                or extraction.document_id != identity
-                or len({c.occurrence.split('conceptos')[0] for c in extraction.concepts}) != 1):
-            omitted.add((identity, 'Trazabilidad o vocabulario de conceptos no inequívoco'))
-            continue
+        extraction = selected
         matched = False
         for c in sorted(extraction.concepts, key=lambda c: c.occurrence):
             component = component_label(extraction.extractor_name, c)
