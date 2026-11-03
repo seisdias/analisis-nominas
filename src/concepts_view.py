@@ -19,6 +19,7 @@ from src.gui_presentation import (
     canonical_value_text,
     short_id,
 )
+from src.reconstruction_view import render_reconstruction
 
 _COLUMNS = {'codigo': 'Código original', 'concepto': 'Denominación original',
             'columna': 'Columna original', 'categoria': 'Categoría del parser',
@@ -106,6 +107,7 @@ def render_concepts(database: Path, document_id: str) -> None:
                        'Una prorrata informativa o una base no se interpreta como devengo.')
             st.dataframe(references, hide_index=True, column_config={
                 'Valor documental': st.column_config.TextColumn(alignment='right')})
+        render_reconstruction(extraction)
         render_classification(extraction)
         _trace(extraction)
     with st.expander('Visor completo de hechos documentales · investigación avanzada'):
