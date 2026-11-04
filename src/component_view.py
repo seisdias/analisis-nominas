@@ -51,27 +51,29 @@ def _reset(key: str) -> None:
     st.session_state.pop(key + '_hidden', None)
 
 
-def component_visibility(available: set[str], *, key: str) -> tuple[str, ...]:
-    options = tuple(c for c in COMPONENTS if c in available)
+def component_visibility(available: set[str], *, key: str, options: tuple[str, ...] = COMPONENTS,
+                         label: str = 'Componentes económicos visibles',
+                         reset_label: str = 'Restablecer componentes') -> tuple[str, ...]:
+    options = tuple(c for c in options if c in available)
     hidden = set(st.session_state.get(key + '_hidden', ()))
     st.session_state[key] = [c for c in options if c not in hidden]
-    selected = st.multiselect('Componentes económicos visibles', options, key=key,
+    selected = st.multiselect(label, options, key=key,
         persist_state='session', on_change=_remember, args=(key, options))
-    st.button('Restablecer componentes', key=key + '_reset', on_click=_reset, args=(key,))
+    st.button(reset_label, key=key + '_reset', on_click=_reset, args=(key,))
     return tuple(c for c in selected if c in options)
 
 
-def component_chart(rows: list[dict[str, Any]]) -> alt.Chart | alt.FacetChart:
+def component_chart(rows: list[dict[str, Any]], *, components: tuple[str, ...] = COMPONENTS) -> alt.Chart | alt.FacetChart:
     chart = alt.Chart(alt.Data(values=rows)).mark_point(filled=True, size=90).encode(
         x=alt.X('Fecha:T', title='Periodo del documento', axis=alt.Axis(format='%m/%Y')),
         y=alt.Y('Importe:Q', title='Importe documental (€ de presentación)', scale=alt.Scale(zero=False)),
-        color=alt.Color('Componente:N', scale=alt.Scale(domain=list(COMPONENTS),
-            range=['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00']),
-            legend=alt.Legend(values=[c for c in COMPONENTS if any(r['Componente'] == c for r in rows)])),
+        color=alt.Color('Componente:N', scale=alt.Scale(domain=list(components),
+            range=['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00', '#56B4E9', '#555555'][:len(components)]),
+            legend=alt.Legend(values=[c for c in components if any(r['Componente'] == c for r in rows)])),
         tooltip=['Periodo del documento:N','Empresa:N','Componente:N','Etiqueta original:N',
                  'Código original:N','Columna documental:N','Importe exacto:N','Moneda canónica:N',
                  'Estado:N','Documento:N','Versión:N','Extracción:N','Ocurrencia:N','Hecho:N',
-                 'Clave original:N','Páginas:N'],
+                 'Clave original:N','Páginas:N'] + [k+':N' for k in ('Cobertura', 'Fórmula') if any(k in r for r in rows)],
     ).properties(height=260).interactive()
     if len({r['Empresa'] for r in rows}) > 1:
         return chart.facet(row=alt.Row('Empresa:N', title=None))

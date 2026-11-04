@@ -521,3 +521,42 @@ def _annual(
     total = _sum(tuple((v, n) for v, n in amounts if v is not None))
     formula = " + ".join(f"{t.repetitions} × [{t.occurrence}]" for t in terms)
     return "", total, evidence, formula
+
+
+def identified_ordinary(e: ExtractionConcepts) -> Indicator:
+    """B2b.3: reviewed ordinary subset, not recurrence or complete fixed coverage.
+
+    The exact B2a tuples identify ordinary salary rows. Pinned B2b.1 contracts
+    authorize their signed addition only within reconciled earnings of this
+    extraction. No total-minus-exceptions formula, annualization or scalar fallback.
+    """
+    label = "Ordinario identificado (parcial)"
+    r = reconstruct(e)
+    types = [f.fact.value for f in e.facts if f.fact.fact_key in ("nomina.tipo", "payload/tipo")]
+    if (
+        e.extractor_name not in ("InecoParser", "ExcelticParser")
+        or len(types) != 1
+        or types[0].state != ValueState.PRESENT
+        or types[0].value != "NOMINA_ORDINARIA"
+        or r.earnings.status != Status.RECONCILED
+    ):
+        return _unavailable(
+            label,
+            "Sin contrato ordinario aplicable o devengos no conciliados; consulta las partidas individuales.",
+        )
+    parts = tuple(
+        p for p in r.parts if p.bucket == Bucket.FIXED_CANDIDATE and p.source.arrears is False
+    )
+    if not parts or any(p.amount is None for p in parts):
+        return _unavailable(label, "No hay componentes ordinarios inequívocos con importe fiable.")
+    participants = tuple(f for p in parts if (f := p.source.source.get("importe")) is not None)
+    return Indicator(
+        label,
+        ExactAmount(_sum(tuple((p.amount, 1) for p in parts if p.amount is not None))),
+        Coverage.PARTIAL,
+        Knowledge.CALCULATED,
+        "Suma de filas ordinarias identificadas; excluye extras, prorratas, bonus, atrasos y otros conceptos",
+        participants,
+        ("ordinary-subset/b2b3-v1", r.earnings.contract_reference or ""),
+        "Participación contable acreditada; cobertura salarial y periodicidad no acreditadas. No es fijo comparable.",
+    )
