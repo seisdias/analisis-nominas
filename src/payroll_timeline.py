@@ -193,6 +193,7 @@ def prepare_timeline(records: list[dict[str, Any]], *, years: tuple[int, int],
                        'Importe': float(value['amount'].to_decimal()), 'Importe exacto': format_amount(value),
                        'Documento': row['document_id'], 'Observación': row['observation_id'],
                        'Tramo': f'{segment}', 'Multipago': key in multipayment,
+                       'Versión del soporte': '\n'.join(row['source_version_ids']),
                        'Intervalo documental': interval_text})
     return Timeline(points, table, len(ambiguous))
 

@@ -73,7 +73,7 @@ def component_chart(rows: list[dict[str, Any]], *, components: tuple[str, ...] =
         tooltip=['Periodo del documento:N','Empresa:N','Componente:N','Etiqueta original:N',
                  'Código original:N','Columna documental:N','Importe exacto:N','Moneda canónica:N',
                  'Estado:N','Documento:N','Versión:N','Extracción:N','Ocurrencia:N','Hecho:N',
-                 'Clave original:N','Páginas:N'] + [k+':N' for k in ('Cobertura', 'Fórmula') if any(k in r for r in rows)],
+                 'Clave original:N','Páginas:N'] + [k+':N' for k in ('Cobertura', 'Fórmula', 'Selección analítica') if any(k in r for r in rows)],
     ).properties(height=260).interactive()
     if len({r['Empresa'] for r in rows}) > 1:
         return chart.facet(row=alt.Row('Empresa:N', title=None))
@@ -113,6 +113,6 @@ def render_components(database: Path, documents: Sequence[AnalyticDocument],
     if result.omitted:
         with st.expander('Disponibilidad y límites de los componentes'):
             st.caption('Los totales conservan sus contratos propios. La selección de versión en la ficha '
-                       'no autoriza series multiversión: quedan pendientes de D.2.3-C. '
+                       'sirve para inspección. Las series requieren una resolución documental verificable. '
                        'Las correspondencias no cubiertas siguen disponibles en el visor documental.')
             st.dataframe([{'Documento': short_id(i), 'Motivo': reason} for i,reason in result.omitted], hide_index=True)

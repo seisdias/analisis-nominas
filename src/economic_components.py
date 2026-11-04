@@ -13,6 +13,7 @@ from src.document_concepts import (
     FactEvidence,
 )
 from src.gui_presentation import canonical_value_text, format_period
+from src.version_analysis import analytical_version
 
 CONTRACT = 'documentary-components/d2.3-b1-v1'
 # Exact documentary tuples, scoped to their original extractor. No label similarity,
@@ -40,6 +41,7 @@ class ComponentPoint:
     amount: FactEvidence
     extractor_name: str
     extractor_revision: str
+    selection: str = 'Versión única'
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,7 @@ class ComponentProjection:
 def documentary_block(doc: AnalyticDocument, blocked: Mapping[str, str]) -> str | None:
     if doc.document_id in blocked:
         return blocked[doc.document_id]
-    if len(doc.provenance) != 1:
+    if not doc.provenance:
         return 'Multiversión o versión ausente: conceptos sin selección autorizada'
     if doc.category != DocumentCategory.ORDINARY or doc.classification_document_id != doc.document_id:
         return 'Sin clasificación ordinaria inequívoca para componentes internos'
@@ -79,16 +81,31 @@ def component_label(extractor: str, concept: ConceptOccurrence) -> str | None:
 def component_extraction(doc: AnalyticDocument, source: DocumentConcepts | None) -> ExtractionConcepts | str:
     """Shared B1 provenance guard. Does not authorize any new economic formula."""
     identity = doc.document_id
-    if (len(doc.provenance) != 1 or source is None or source.document_id != identity
-            or source.version_ids != (doc.provenance[0].version_id,)):
+    if (source is None or source.document_id != identity or sorted(source.version_ids) !=
+            sorted(v.version_id for v in doc.provenance)):
         return 'Procedencia documental incompleta o incompatible'
-    extractions = [e for e in source.extractions if e.concepts]
-    if len(extractions) != 1:
-        return ('Desglose no disponible' if not extractions else
-                'Varias extracciones con conceptos: sin selección autorizada')
-    extraction = extractions[0]
-    if (extraction.extraction_id not in doc.provenance[0].extraction_ids
-            or extraction.version_id != source.version_ids[0]
+    selection = analytical_version(source)
+    extraction = selection.extraction
+    if extraction is None:
+        return selection.reason
+    if selection.projection_id is not None:
+        if any(set(v.extraction_ids) != {e.extraction_id for e in source.extractions if e.version_id == v.version_id}
+               for v in doc.provenance):
+            return 'Inventario de extracciones incompatible con la resolución'
+        projection = next(e for e in source.extractions if e.extraction_id == selection.projection_id)
+        projection_facts = {f.fact.fact_key: f.fact.fact_id for f in projection.facts}
+        links = dict(doc.observation_facts)
+        for magnitude, key in (('documentary_gross','nomina.total_devengado'),
+                               ('documentary_net','nomina.liquido_percibir')):
+            matches = [o for o in doc.observations if o.magnitude == magnitude]
+            if len(matches) > 1:
+                return 'Totales alternativos sin soporte único'
+            if matches:
+                support = links.get(matches[0].observation_id, ())
+                if projection_facts.get(key) not in support or not set(support) <= set(projection_facts.values()):
+                    return 'Soporte del total incompatible con la versión autorizada'
+    provenance = next(v for v in doc.provenance if v.version_id == extraction.version_id)
+    if (extraction.extraction_id not in provenance.extraction_ids
             or extraction.document_id != identity
             or len({c.occurrence.split('conceptos')[0] for c in extraction.concepts}) != 1):
         return 'Trazabilidad o vocabulario de conceptos no inequívoco'
@@ -132,7 +149,8 @@ def project_components(documents: Sequence[AnalyticDocument], sources: Mapping[s
                 continue
             assert doc.company_text is not None and doc.documentary_period is not None
             points.append(ComponentPoint(component, doc.company_text, doc.documentary_period, c, amount,
-                                         extraction.extractor_name, extraction.extractor_revision))
+                                         extraction.extractor_name, extraction.extractor_revision,
+                                         'Resolución documental A.3' if len(doc.provenance) > 1 else 'Versión única'))
         if not matched:
             omitted.add((identity, 'Sin correspondencias explícitas B1; consulta el desglose en la ficha'))
     return ComponentProjection(tuple(points), tuple(sorted(omitted)))
@@ -152,5 +170,5 @@ def component_rows(points: Sequence[ComponentPoint]) -> list[dict[str, Any]]:
             'Etiqueta original': _text(c,'concepto'), 'Código original': _text(c,'codigo'),
             'Columna documental': _text(c,'columna'), 'Categoría original': _text(c,'categoria'),
             'Estado': 'Disponible', 'Páginas': ', '.join(map(str,p.amount.pages)) or 'No registradas',
-            'Extractor': p.extractor_name, 'Revisión': p.extractor_revision, 'Contrato visual': CONTRACT})
+            'Selección analítica': p.selection, 'Extractor': p.extractor_name, 'Revisión': p.extractor_revision, 'Contrato visual': CONTRACT})
     return rows

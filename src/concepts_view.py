@@ -9,10 +9,12 @@ from src.classification_view import render_classification
 from src.document_concepts import (
     REFERENCE_FIELDS,
     ConceptOccurrence,
+    DocumentConcepts,
     ExtractionConcepts,
     FactEvidence,
     load_document_concepts,
 )
+from src.economic_components import component_label
 from src.gui_presentation import (
     VALUE_STATES,
     canonical_candidate_text,
@@ -20,6 +22,7 @@ from src.gui_presentation import (
     short_id,
 )
 from src.reconstruction_view import render_reconstruction
+from src.version_analysis import analytical_version
 
 _COLUMNS = {'codigo': 'Código original', 'concepto': 'Denominación original',
             'columna': 'Columna original', 'categoria': 'Categoría del parser',
@@ -71,6 +74,44 @@ def _trace(extraction: ExtractionConcepts) -> None:
                       for e in extraction.facts if e.fact.fact_id in ids], hide_index=True)
 
 
+def _compare_versions(document: DocumentConcepts) -> None:
+    policy = analytical_version(document)
+    st.subheader('Comparación de versiones')
+    st.write(policy.status.value + ' · ' + policy.reason)
+    if policy.review:
+        st.text('Motivo registrado en A.3: ' + policy.review)
+    rows = []
+    for version_id in document.version_ids:
+        for e in (e for e in document.extractions if e.version_id == version_id):
+            def total(name: str) -> str:
+                fs = [f for f in e.facts if f.fact.fact_key in ('nomina.'+name, 'payload/'+name)]
+                return canonical_value_text(fs[0].fact.value, monetary=True) if len(fs)==1 else 'Ausente o ambiguo'
+
+            items = []
+            for c in e.concepts:
+                label = component_label(e.extractor_name, c)
+                if label:
+                    items.append(label + ' · ' + _text(c.get('importe'), 'importe'))
+            rows.append({'Versión': short_id(version_id), 'Extracción': short_id(e.extraction_id),
+                         'Estado para componentes': 'Origen autorizado' if e == policy.extraction
+                         else 'Soporte de la resolución' if e.extraction_id == policy.projection_id
+                         else 'Solo inspección',
+                         'Extractor': e.extractor_name, 'Bruto documental': total('total_devengado'),
+                         'Neto documental': total('liquido_percibir'), 'Ocurrencias': len(e.concepts),
+                         'Componentes con correspondencia B1': ' · '.join(items) or 'Ninguno'})
+    if rows:
+        st.dataframe(rows, hide_index=True)
+    originals = [e for e in document.extractions if e.extractor_name == 'alten-legacy-evidence']
+    if len(originals) == len(document.version_ids) and {e.version_id for e in originals} == set(document.version_ids):
+        different = [label for key, label in (('total_devengado', 'bruto'), ('liquido_percibir', 'neto'))
+                     if len({tuple(f.fact.value for f in e.facts if f.fact.fact_key == 'payload/'+key)
+                             for e in originals}) > 1]
+        if different:
+            st.caption('Diferencias de valor o estado entre originales: ' + ', '.join(different) + '.')
+    st.caption('Los totales se leen por extracción. Cada fila conserva las partidas de su versión. '
+               'La autorización documental permite aplicar los filtros y requisitos propios de cada serie.')
+
+
 def render_concepts(database: Path, document_id: str) -> None:
     document = load_document_concepts(database, document_id)
     extractions = document.extractions
@@ -82,10 +123,13 @@ def render_concepts(database: Path, document_id: str) -> None:
         st.info('No hay versiones documentales disponibles para inspeccionar.')
     version = versions[0] if len(versions) == 1 else None
     if len(versions) > 1:
+        _compare_versions(document)
         st.info('Elige una versión para leer su desglose. Esta selección no cambia resoluciones ni los totales certificados.')
         version = st.selectbox('Versión para consultar', [None, *versions],
             format_func=lambda v: 'Selecciona una versión' if v is None else short_id(v),
             key='concept-version-' + document_id, persist_state='session')
+    if len(versions) > 1 and version is not None:
+        st.caption('Solo inspección · versión ' + short_id(version))
     selected = [e for e in extractions if e.version_id == version]
     if version is not None and not any(e.concepts for e in selected):
         st.info('El desglose por conceptos no está disponible en SQLite para esta versión. '

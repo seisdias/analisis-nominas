@@ -80,7 +80,7 @@ def project_income(
                     "Cobertura": "Total documental certificado; no salario ordinario",
                     "Fórmula": "Valor documental, sin cálculo",
                     "Moneda canónica": doc.currency.code if doc.currency else "No acreditada",
-                    "Versión": "; ".join(v.version_id for v in doc.provenance),
+                    "Versión": p.get("Versión del soporte", "; ".join(v.version_id for v in doc.provenance)),
                     "Estado": "Certificación existente; evidence_only permanece intacto",
                 },
             )
@@ -152,6 +152,7 @@ def project_income(
                         amount,
                         e.extractor_name,
                         e.extractor_revision,
+                        "Resolución documental A.3" if len(doc.provenance) > 1 else "Versión única",
                     )
                 )
                 represented.add(amount.fact.fact_id)
