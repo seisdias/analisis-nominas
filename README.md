@@ -459,9 +459,8 @@ las monedas explícitas incompatibles se excluyen con aviso.
 
 Sin desglose persistido, Coritel e INSIS4 conservan sus totales y extras independientes,
 pero no generan componentes mediante diferencias matemáticas. **D.2.3-B2** queda pendiente
-para otras familias y correspondencias justificadas. **D.2.3-C** deberá definir el contrato
-para series de conceptos multiversión; B1 no aplica a partidas parciales las resoluciones
-de totales ALTEN. No se crean observaciones ni se modifica SQLite.
+para otras familias y correspondencias justificadas. D.2.3-C habilita la extracción documental autorizada por el manifiesto A.3
+para representar sus partidas elegibles. No se crean observaciones ni se modifica SQLite.
 
 ### Clasificación y conciliación económica (D.2.3-B2a)
 
@@ -530,7 +529,7 @@ emite estimaciones ni escribe derivados en SQLite.
 Quedan fuera de este incremento:
 
 - **B2b.2:** implementado a continuación; la activación de contratos salariales reales requiere evidencia adicional.
-- **C:** selección/resolución autorizada de conceptos multiversión para series; B1 sigue excluyéndolos.
+- **C:** selección documental A.3 para las series de componentes (implementada más abajo).
 - **B2c:** gráficas normalizadas sobre equivalencias acreditadas; no agregación automática.
 - **D.2.5:** comparabilidad de IRPF, cotizaciones y bases; su identificación actual no la acredita.
 
@@ -566,7 +565,7 @@ vigente y **no es el total cobrado durante el ejercicio**. No se generan estimac
 Véanse los [contratos retributivos, fórmulas y límites](docs/salary-reconstruction-contracts.md).
 No se modifican cobertura, gráficos B1, restricciones locales, clasificaciones, certificados,
 resoluciones ni SQLite. Las versiones se diagnostican por separado y no se consolidan:
-D.2.3-C abordará esa política, B2c las gráficas normalizadas y D.2.5 las familias fiscales.
+D.2.3-C aplica la resolución documental a la representación de componentes. B2c aborda las gráficas normalizadas y D.2.5 las familias fiscales.
 
 
 ### Primera evolución de ingresos ordinarios (D.2.3-B2b.3)
@@ -601,3 +600,18 @@ y funciones identificadas, no acreditación de salario habitual ni causa de una 
 Véase [contrato de ordinario parcial y diagnóstico de picos](docs/ordinary-income-contracts.md).
 No se incorporan estimaciones, datos derivados a SQLite, nuevas certificaciones ni
 consolidación multiversión. D.2.3-C y B2c conservan sus requisitos de evidencia adicionales.
+
+
+### Resolución multiversión para las series económicas (D.2.3-C)
+
+La ficha permite comparar los totales y conceptos de cada extracción y consultar la
+versión elegida por la revisión documental ALTEN A.3. El selector de inspección
+abre cualquier alternativa y conserva su propia clasificación, conciliación y
+reconstrucción. La decisión registrada sigue determinando el origen de las series.
+
+B1 y el panel admiten las partidas de una única extracción original cuando se
+verifican el manifiesto A.3, su inventario y la procedencia de los hechos. El
+detalle del punto muestra la versión, la extracción, el hecho y el origen de la
+selección. Las restricciones del contexto y los contratos económicos de cada
+serie siguen aplicándose. Los motivos de exclusión se consultan en la ficha y en
+la disponibilidad de componentes. [Contrato técnico](docs/analytical-versions.md)

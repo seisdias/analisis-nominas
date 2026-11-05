@@ -105,7 +105,7 @@ candidatos a fijo, extras de referencia y motivos de indisponibilidad. Las fórm
 procedencia y restricciones se despliegan bajo demanda. No añade gráficas ni cambia
 filtros, cobertura, totales, resolución ALTEN o restricciones de Coritel.
 
-D.2.3-C deberá resolver la política analítica multiversión. B2c podrá representar sólo
+D.2.3-C verifica la resolución A.3 para representar los componentes de su extracción original. B2c podrá representar sólo
 indicadores con contratos acreditados; no reconstruirá datos históricos ausentes.
 D.2.5 abordará IRPF, cotizaciones y bases comparables. Acreditar garantías salariales
 reales requiere evidencia adicional y revisión explícita antes de activar contratos.
