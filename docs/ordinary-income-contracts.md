@@ -100,3 +100,33 @@ extra/prorrata/atraso, desconocidos, versiones/extracciones, vínculo del total,
 huecos, visibilidad, navegación y lectura inalterada de SQLite. Hay una prueba integral
 que crea una base sintética, pasa por el inspector y abre el panel con Streamlit AppTest.
 Las pruebas anteriores de contratos 12/14 y equivalencia B2b.2 permanecen intactas.
+
+## Composición interactiva y periodos B2c
+
+El punto seleccionado lleva el identificador lógico íntegro. El control alternativo
+de nómina usa la misma identidad dentro del contexto visible. Las magnitudes y
+partidas se obtienen desde la proyección anterior al filtrado visual. Así puede
+ocultarse una extra para comparar dos series y seguir viéndola al abrir el bruto.
+
+El detalle reutiliza las ocurrencias de devengos de la reconstrucción. Los escalares
+y bases de cotización quedan fuera de la lista. La vinculación al bruto exige su
+hecho de soporte o la proyección A.3 verificada por D.2.3-C. Si falta ese vínculo,
+las partidas visibles conservan su carácter individual. Una diferencia aritmética
+conserva el signo de la conciliación B2a. La clasificación funcional incompleta
+puede coexistir con una suma contable conciliada.
+
+La gráfica presenta el ordinario parcial y reserva series separadas para el
+ordinario completo y el equivalente mensual con importe y cobertura completa
+del motor B2b.2. El cociente económico conserva numerador y divisor. La conversión
+para dibujar ocurre al producir la coordenada visual. El corpus actual proporciona
+sólo cobertura parcial de ordinario.
+
+Para consultar periodos con **la misma composición documental**, la tabla exige
+una única mensualidad por empresa y mes, intervalo impreso del primer al último
+día del mes civil, devengos conciliados y suma parcial vinculada al bruto. Sólo
+agrupa meses consecutivos con el mismo extractor, revisión, estado de moneda y
+multiconjunto de códigos y denominaciones de las partidas participantes. Excluye
+multipagos. La comparación describe las partidas disponibles. Cuando la moneda
+es desconocida se indica en la tabla. Todos los puntos permanecen individuales.
+La comparación entre modalidades de 12 y 14 pagas requiere además cobertura
+contractual de las extras, periodicidad y equivalencia anual.

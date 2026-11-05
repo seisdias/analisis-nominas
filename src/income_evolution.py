@@ -1,8 +1,10 @@
 """Presentation projection over B1 provenance and B2b arithmetic; no database access."""
 
+from calendar import monthrange
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import groupby
 from typing import Any
 
 from src.analytic_dataset import AnalyticDocument, DocumentCategory
@@ -15,8 +17,15 @@ from src.economic_components import (
     documentary_block,
     project_components,
 )
+from src.gui_presentation import format_period
 from src.salary_reconciliation import Status
-from src.salary_reconstruction import Bucket, identified_ordinary, reconstruct
+from src.salary_reconstruction import (
+    Bucket,
+    Coverage,
+    Reconstruction,
+    identified_ordinary,
+    reconstruct,
+)
 
 GROSS = "Bruto documental"
 ORDINARY = "Ordinario identificado (parcial)"
@@ -25,7 +34,20 @@ PRORATION = "Prorratas salariales identificadas"
 VARIABLE = "Bonus/variable identificado"
 ADJUSTMENT = "Atrasos y ajustes identificados"
 INDEPENDENT = "Extras identificadas (documento independiente)"
-SERIES = (GROSS, ORDINARY, EXTRA, PRORATION, VARIABLE, ADJUSTMENT, INDEPENDENT)
+COMPLETE = "Ordinario completo acreditado"
+MONTHLY = "Fijo mensual comparable"
+SERIES = (GROSS, ORDINARY, EXTRA, PRORATION, VARIABLE, ADJUSTMENT, INDEPENDENT, COMPLETE, MONTHLY)
+DISPLAY = {
+    GROSS: "Bruto de la nómina",
+    ORDINARY: "Retribución ordinaria identificada (parcial)",
+    EXTRA: "Extra incluida en la nómina",
+    INDEPENDENT: "Paga extraordinaria independiente",
+    PRORATION: "Prorratas salariales",
+    VARIABLE: "Bonus y variables",
+    ADJUSTMENT: "Atrasos y ajustes",
+    COMPLETE: COMPLETE,
+    MONTHLY: MONTHLY,
+}
 _LABELS = {
     "Extra de verano incluida": EXTRA,
     "Extra de Navidad incluida": EXTRA,
@@ -36,9 +58,54 @@ _LABELS = {
 
 
 @dataclass(frozen=True)
+class MonthBasis:
+    company: str
+    period: tuple[int, int]
+    extractor: str
+    revision: str
+    currency: str | None
+    members: tuple[tuple[str, str], ...]
+
+
+def matching_periods(months: Sequence[MonthBasis]) -> list[dict[str, str]]:
+    """Consecutive whole documentary months with identical partial-sum inputs."""
+    counts = Counter((m.company, m.period) for m in months)
+    unique = sorted(
+        (m for m in months if counts[m.company, m.period] == 1), key=lambda m: (m.company, m.period)
+    )
+    windows = []
+    for _, run in groupby(
+        enumerate(unique),
+        key=lambda item: (
+            item[1].company,
+            item[1].extractor,
+            item[1].revision,
+            item[1].currency,
+            item[1].members,
+            item[1].period[0] * 12 + item[1].period[1] - item[0],
+        ),
+    ):
+        group = [month for _, month in run]
+        if len(group) > 1:
+            first = group[0]
+            windows.append(
+                {
+                    "Empresa": first.company,
+                    "Desde": format_period(*first.period),
+                    "Hasta": format_period(*group[-1].period),
+                    "Partidas ordinarias": ", ".join(label for _, label in first.members),
+                    "Moneda documentada": first.currency or "Sin acreditar",
+                }
+            )
+    return windows
+
+
+@dataclass(frozen=True)
 class IncomeProjection:
     rows: list[dict[str, Any]]
     diagnostics: tuple[dict[str, str], ...]
+    compositions: dict[str, Reconstruction] = field(default_factory=dict)
+    bases: tuple[MonthBasis, ...] = ()
 
 
 def visible_income(rows: Sequence[dict[str, Any]], selected: Sequence[str]) -> list[dict[str, Any]]:
@@ -58,6 +125,8 @@ def project_income(
     """
     rows: list[dict[str, Any]] = []
     diagnostics = []
+    compositions = {}
+    bases = []
     counts = Counter(d.document_id for d in documents)
     docs = {d.document_id: d for d in documents if counts[d.document_id] == 1}
     total_counts = Counter(p["Documento"] for p in totals if p["Serie"] == "Bruto")
@@ -80,7 +149,9 @@ def project_income(
                     "Cobertura": "Total documental certificado; no salario ordinario",
                     "Fórmula": "Valor documental, sin cálculo",
                     "Moneda canónica": doc.currency.code if doc.currency else "No acreditada",
-                    "Versión": p.get("Versión del soporte", "; ".join(v.version_id for v in doc.provenance)),
+                    "Versión": p.get(
+                        "Versión del soporte", "; ".join(v.version_id for v in doc.provenance)
+                    ),
                     "Estado": "Certificación existente; evidence_only permanece intacto",
                 },
             )
@@ -184,6 +255,43 @@ def project_income(
             and r.earnings.target.fact.fact_id
             in dict(doc.observation_facts).get(gross_support[0]["Observación"], ())
         )
+        # A.3 verifies that the observation uses the projection linked to this
+        # original extraction. Monoversion comparisons require the same total fact.
+        authorized_projection = (
+            len(doc.provenance) > 1
+            and len(gross_support) == 1
+            and any(
+                o.magnitude == "documentary_gross"
+                and o.observation_id == gross_support[0]["Observación"]
+                for o in doc.observations
+            )
+        )
+        if comparison_supported or authorized_projection:
+            compositions[identity] = r
+            for series, indicator in ((COMPLETE, r.fixed), (MONTHLY, r.monthly)):
+                if indicator.amount is None or indicator.coverage != Coverage.COMPLETE:
+                    continue
+                rows.append(
+                    dict(
+                        gross_support[0],
+                        Componente=series,
+                        Importe=float(indicator.amount.numerator / indicator.amount.divisor),
+                        **{
+                            "Importe exacto": f"{indicator.amount.numerator} / {indicator.amount.divisor}",
+                            "Periodo del documento": f"{doc.documentary_period[1]:02d}/{doc.documentary_period[0]}",
+                            "Versión": e.version_id,
+                            "Extracción": e.extraction_id,
+                            "Cobertura": indicator.coverage.value,
+                            "Fórmula": indicator.formula,
+                            "Hecho": "; ".join(f.fact.fact_id for f in indicator.participants),
+                            "Moneda canónica": indicator.participants[0].fact.value.currency.code
+                            if indicator.participants
+                            and indicator.participants[0].fact.value.currency
+                            else "No acreditada",
+                            "Contrato": "; ".join(indicator.evidence),
+                        },
+                    )
+                )
         if ordinary.amount is not None and comparison_supported:
             support = ordinary.participants
             labels = [
@@ -192,6 +300,39 @@ def project_income(
                 if (label := c.get("concepto")) is not None and c.get("importe") in support
             ]
             year, month = doc.documentary_period
+            # Compare like documentary baskets only within explicit full-month intervals.
+            dates = {
+                f.fact.fact_key: f.fact.value.value
+                for f in e.facts
+                if f.fact.fact_key in ("nomina.fecha_inicio", "nomina.fecha_fin")
+                and f.fact.value.state == ValueState.PRESENT
+            }
+            prefix = f"{year:04d}-{month:02d}-"
+            if (
+                not gross_support[0].get("Multipago", False)
+                and dates.get("nomina.fecha_inicio") == prefix + "01"
+                and dates.get("nomina.fecha_fin") == prefix + str(monthrange(year, month)[1])
+            ):
+                members = tuple(
+                    sorted(
+                        (str(code.fact.value.value), str(label.fact.value.value))
+                        for c in e.concepts
+                        if c.get("importe") in support
+                        and (code := c.get("codigo")) is not None
+                        and (label := c.get("concepto")) is not None
+                    )
+                )
+                currency = support[0].fact.value.currency
+                bases.append(
+                    MonthBasis(
+                        doc.company_text,
+                        doc.documentary_period,
+                        e.extractor_name,
+                        e.extractor_revision,
+                        currency.code if currency else None,
+                        members,
+                    )
+                )
             rows.append(
                 {
                     "Fecha": f"{year:04d}-{month:02d}-01",
@@ -242,10 +383,10 @@ def project_income(
                 + r.earnings.reason
                 + (
                     ""
-                    if comparison_supported
+                    if comparison_supported or authorized_projection
                     else " No coincide el soporte del bruto representado con esta extracción."
                 ),
-                "Fijo equivalente": "No determinable: cobertura, recurrencia y modalidad anual no acreditadas",
+                "Fijo equivalente": f"{r.monthly.knowledge.value}. {r.monthly.reason}",
                 "Conceptos pendientes": str(
                     sum(p.bucket == Bucket.UNKNOWN or p.amount is None for p in r.parts)
                 ),
@@ -264,4 +405,6 @@ def project_income(
             ),
         ),
         tuple(diagnostics),
+        compositions,
+        tuple(bases),
     )
