@@ -1,5 +1,5 @@
 """Shared component visualization for panel and history; no documentary cache."""
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -53,11 +53,12 @@ def _reset(key: str) -> None:
 
 def component_visibility(available: set[str], *, key: str, options: tuple[str, ...] = COMPONENTS,
                          label: str = 'Componentes económicos visibles',
-                         reset_label: str = 'Restablecer componentes') -> tuple[str, ...]:
+                         reset_label: str = 'Restablecer componentes',
+                         format_func: Callable[[str], str] = str) -> tuple[str, ...]:
     options = tuple(c for c in options if c in available)
     hidden = set(st.session_state.get(key + '_hidden', ()))
     st.session_state[key] = [c for c in options if c not in hidden]
-    selected = st.multiselect(label, options, key=key,
+    selected = st.multiselect(label, options, key=key, format_func=format_func,
         persist_state='session', on_change=_remember, args=(key, options))
     st.button(reset_label, key=key + '_reset', on_click=_reset, args=(key,))
     return tuple(c for c in selected if c in options)

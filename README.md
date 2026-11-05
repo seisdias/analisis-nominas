@@ -615,3 +615,22 @@ detalle del punto muestra la versión, la extracción, el hecho y el origen de l
 selección. Las restricciones del contexto y los contratos económicos de cada
 serie siguen aplicándose. Los motivos de exclusión se consultan en la ficha y en
 la disponibilidad de componentes. [Contrato técnico](docs/analytical-versions.md)
+
+### Explorar un bruto y sus partidas (D.2.3-B2c)
+
+En **Panel de análisis → Evolución retributiva identificada**, elige las series en
+**Datos a analizar**. El cuadrado identifica totales, el rombo señala la cobertura
+parcial del ordinario y los círculos muestran partidas individuales. El color y
+la leyenda distinguen la extra independiente, la extra incluida, la prorrata
+salarial, el bonus y los ajustes. La gráfica usa puntos en el periodo documental.
+
+Pulsa un punto o elige **Ver composición de una nómina** para consultar el bruto,
+el ordinario disponible y las filas de devengos de ese documento. El detalle
+incluye las partidas pendientes de clasificación, su importe o estado original
+y la conciliación disponible. Ocultar una serie conserva las partidas del detalle.
+La ficha documental permite ampliar la evidencia por versión y extracción.
+
+**Meses con las mismas partidas ordinarias** identifica periodos consecutivos
+de meses civiles completos con una base documental coincidente. La tabla muestra
+la empresa, las partidas y el estado de la moneda. El fijo mensual comparable
+requiere el contrato de equivalencia de B2b.2. [Criterios de comparación y composición](docs/ordinary-income-contracts.md)
