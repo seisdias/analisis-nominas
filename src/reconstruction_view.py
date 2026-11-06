@@ -4,6 +4,7 @@ import streamlit as st
 
 from src.document_concepts import ExtractionConcepts
 from src.gui_presentation import canonical_value_text
+from src.salary_evidence import SalaryEvidence, describe_salary, evidence_rows
 from src.salary_reconstruction import identified_ordinary, reconstruct
 
 
@@ -54,7 +55,8 @@ def render_reconstruction(extraction: ExtractionConcepts) -> None:
             ],
             hide_index=True,
         )
-    indicators = (identified_ordinary(extraction), r.fixed, r.monthly, r.annual)
+    ordinary = identified_ordinary(extraction)
+    indicators = (ordinary, r.fixed, r.monthly, r.annual)
     available = [i for i in indicators if i.amount is not None]
     if available:
         st.dataframe(
@@ -69,7 +71,9 @@ def render_reconstruction(extraction: ExtractionConcepts) -> None:
             ],
             hide_index=True,
         )
-    if r.fixed.amount is None:
+    if extraction.extractor_name in ("InecoParser", "ExcelticParser"):
+        render_salary_evidence(describe_salary(extraction, r, ordinary))
+    elif r.fixed.amount is None:
         st.info(
             "No hay cobertura contractual del fijo ni periodicidad suficientes para calcular "
             "un salario fijo completo o equivalentes mensual/anual. Las partidas identificadas siguen disponibles."
@@ -127,6 +131,38 @@ def render_reconstruction(extraction: ExtractionConcepts) -> None:
                     }
                     for p in r.parts
                     if (f := p.source.source.get("importe")) is not None
+                ],
+                hide_index=True,
+            )
+
+
+def render_salary_evidence(report: SalaryEvidence) -> None:
+    with st.expander("Qué falta para acreditar el fijo"):
+        st.caption(
+            "Cada requisito tiene un alcance distinto. Un mes civil completo y unos devengos "
+            "conciliados no prueban la recurrencia de los complementos ni el régimen anual. "
+            "Las partidas ordinarias identificadas siguen siendo parciales."
+        )
+        st.dataframe(evidence_rows(report), hide_index=True)
+        st.caption(
+            "Para comparar 12 y 14 pagas hacen falta contratos de cobertura, modalidad y extras. "
+            "Una diferencia entre parciales no se presenta como subida salarial."
+        )
+        with st.expander("Hechos que sustentan los requisitos"):
+            st.dataframe(
+                [
+                    {
+                        "Requisito": q.label,
+                        "Documento": report.reconstruction.scope.document_id,
+                        "Versión": report.reconstruction.scope.version_id,
+                        "Extracción": report.reconstruction.scope.extraction_id,
+                        "Hecho": f.fact.fact_id,
+                        "Clave": f.fact.fact_key,
+                        "Estado": f.fact.value.state.value,
+                        "Página": ", ".join(map(str, f.pages)) or "No registrada",
+                    }
+                    for q in report.requirements
+                    for f in q.facts
                 ],
                 hide_index=True,
             )

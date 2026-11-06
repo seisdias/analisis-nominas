@@ -634,3 +634,16 @@ La ficha documental permite ampliar la evidencia por versión y extracción.
 de meses civiles completos con una base documental coincidente. La tabla muestra
 la empresa, las partidas y el estado de la moneda. El fijo mensual comparable
 requiere el contrato de equivalencia de B2b.2. [Criterios de comparación y composición](docs/ordinary-income-contracts.md)
+
+### Evidencia para acreditar el fijo (D.2.3-B2d)
+
+El panel y la ficha de INECO/Exceltic incluyen **«Qué falta para acreditar el fijo»**.
+Separan mes civil, conciliación, naturaleza fija, cobertura, mensualidad íntegra,
+modalidad de pagas y equivalencia anual. Cada requisito muestra la evidencia disponible
+y el documento necesario para cerrar la incertidumbre, con acceso a sus hechos originales.
+
+La revisión focalizada de las nóminas originales no ha permitido activar contratos de
+fijo completo ni equivalencia anual. Se conservan los importes ordinarios parciales,
+extras y prorratas de B2c. La repetición de partidas no acredita recurrencia; una prorrata
+no acredita por sí sola doce pagas. No se presentan diferencias entre parciales como
+subidas salariales. [Evidencia, resultados y contratos pendientes](docs/salary-accreditation.md).

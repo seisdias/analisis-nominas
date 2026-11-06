@@ -109,3 +109,11 @@ D.2.3-C verifica la resolución A.3 para representar los componentes de su extra
 indicadores con contratos acreditados; no reconstruirá datos históricos ausentes.
 D.2.5 abordará IRPF, cotizaciones y bases comparables. Acreditar garantías salariales
 reales requiere evidencia adicional y revisión explícita antes de activar contratos.
+
+## Revisión focalizada B2d
+
+La [matriz de evidencia salarial](salary-accreditation.md) distingue los requisitos
+pendientes de INECO/Exceltic tras contrastar sus nóminas originales. El catálogo de
+producción sigue sin contratos de fijo completo activados. La UI explica por separado
+recurrencia de complementos, cobertura, mensualidad íntegra y composición anual;
+no utiliza la coincidencia de partidas B2c como autorización salarial.
