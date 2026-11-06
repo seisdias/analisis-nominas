@@ -26,6 +26,7 @@ from src.income_evolution import (
     project_income,
     visible_income,
 )
+from src.reconstruction_view import render_salary_evidence
 from src.salary_reconciliation import Status
 from src.salary_reconstruction import Bucket
 
@@ -135,6 +136,9 @@ def _composition(result: IncomeProjection, rows: list[dict[str, Any]], key: str)
                     MONTHLY,
                 ):
                     st.metric(DISPLAY[row["Componente"]], row["Importe exacto"])
+    salary = result.salary_evidence.get(identity)
+    if salary is not None:
+        render_salary_evidence(salary)
     report = result.compositions.get(identity)
     diagnosis = next((d for d in result.diagnostics if d["Documento"] == identity), {})
     if report is None:
@@ -268,6 +272,31 @@ def render_income(
     st.caption(
         "Periodo de la nómina · euros de presentación. Cada panel separa empresa y moneda documentada."
     )
+    if result.salary_evidence:
+        with st.expander("Qué falta para acreditar el fijo en este contexto"):
+            st.caption(
+                "Evaluación por documento, antes de ocultar series. Los tramos de partidas coincidentes "
+                "son documentales, no regímenes salariales acreditados. Abre una nómina para ver "
+                "los hechos y la documentación necesaria."
+            )
+            labels = {row["Documento"]: row for row in result.rows}
+            st.dataframe(
+                [
+                    {
+                        "Periodo": labels[identity]["Periodo del documento"],
+                        "Empresa": labels[identity]["Empresa"],
+                        **{
+                            q.label: "Acreditado en su ámbito" if q.satisfied else "Pendiente"
+                            for q in report.requirements
+                        },
+                    }
+                    for identity, report in sorted(
+                        result.salary_evidence.items(),
+                        key=lambda pair: (pair[1].reconstruction.period or (0, 0), pair[0]),
+                    )
+                ],
+                hide_index=True,
+            )
     if result.bases:
         with st.expander("Meses con las mismas partidas ordinarias"):
             st.caption(

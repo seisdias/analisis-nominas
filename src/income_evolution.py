@@ -18,6 +18,7 @@ from src.economic_components import (
     project_components,
 )
 from src.gui_presentation import format_period
+from src.salary_evidence import SalaryEvidence, describe_salary
 from src.salary_reconciliation import Status
 from src.salary_reconstruction import (
     Bucket,
@@ -106,6 +107,7 @@ class IncomeProjection:
     diagnostics: tuple[dict[str, str], ...]
     compositions: dict[str, Reconstruction] = field(default_factory=dict)
     bases: tuple[MonthBasis, ...] = ()
+    salary_evidence: dict[str, SalaryEvidence] = field(default_factory=dict)
 
 
 def visible_income(rows: Sequence[dict[str, Any]], selected: Sequence[str]) -> list[dict[str, Any]]:
@@ -126,6 +128,7 @@ def project_income(
     rows: list[dict[str, Any]] = []
     diagnostics = []
     compositions = {}
+    salary_evidence = {}
     bases = []
     counts = Counter(d.document_id for d in documents)
     docs = {d.document_id: d for d in documents if counts[d.document_id] == 1}
@@ -268,6 +271,8 @@ def project_income(
         )
         if comparison_supported or authorized_projection:
             compositions[identity] = r
+            if e.extractor_name in ("InecoParser", "ExcelticParser"):
+                salary_evidence[identity] = describe_salary(e, r, ordinary)
             for series, indicator in ((COMPLETE, r.fixed), (MONTHLY, r.monthly)):
                 if indicator.amount is None or indicator.coverage != Coverage.COMPLETE:
                     continue
@@ -407,4 +412,5 @@ def project_income(
         tuple(diagnostics),
         compositions,
         tuple(bases),
+        salary_evidence,
     )
