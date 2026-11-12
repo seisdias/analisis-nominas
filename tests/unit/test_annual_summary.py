@@ -206,3 +206,71 @@ def test_individual_b1_components_count_even_without_linked_gross_composition():
     assert result.groups[0].documents[0].reconstruction is None
     assert summary_rows(result)[0]["Extras incluidas"] == 1
     assert result.groups[0].aggregate is None
+
+
+@pytest.mark.parametrize(
+    ("bucket_name", "column"),
+    [
+        ("EXTRA", "Extras incluidas"),
+        ("PRORATION", "Prorratas"),
+        ("VARIABLE", "Bonus"),
+        ("ADJUSTMENT", "Atrasos y ajustes"),
+    ],
+)
+def test_component_counts_require_amount_and_count_documents_once(bucket_name, column):
+    from decimal import Decimal
+
+    from src.annual_view import summary_rows
+    from src.salary_reconstruction import Bucket, reconstruct
+    from tests.unit.test_income_evolution import fixture
+
+    _, source, _ = fixture()
+    part = replace(reconstruct(source.extractions[0]).parts[0], bucket=Bucket[bucket_name])
+    base = report((document(),))
+    group = next(g for g in base.groups if g.documents)
+    item = group.documents[0]
+    for amounts, expected in [
+        ((None, None), 0),
+        ((None, Decimal("0")), 1),
+        ((Decimal("-12.34"), Decimal("56.78"), None), 1),
+    ]:
+        parts = tuple(replace(part, amount=a) for a in amounts)
+        result = replace(
+            base, groups=(replace(group, documents=(replace(item, component_parts=parts),)),)
+        )
+        assert summary_rows(result)[0][column] == expected
+        assert result.groups[0].documents[0].component_parts == parts
+
+
+@pytest.mark.parametrize("state", ["present", "unknown", "unreliable"])
+@pytest.mark.parametrize("linked", [True, False])
+def test_component_amount_states_consistent_with_unlinked_fallback(state, linked):
+    from src.annual_view import summary_rows
+    from src.canonical.values import ExactDecimal, ValueState
+    from src.documentary_coverage import Availability, CoverageDocument
+    from tests.unit.test_breakdown_completeness import change
+    from tests.unit.test_income_evolution import fixture
+
+    d, s, g = fixture()
+    value = None if state == "unknown" else ExactDecimal(30000, 2)
+    e = change(s.extractions[0], ".importe", value, ValueState(state))
+    s = replace(s, extractions=(e,))
+    if not linked:
+        d = replace(d, observation_facts=(("obs", ("foreign",)),))
+    record = CoverageDocument(
+        d, d.company_text, 2025, 6, Availability.CERTIFIED, Availability.CERTIFIED
+    )
+    result = annual_summary((record,), {d.document_id: s}, {}, [g], years=(2025, 2025))
+    assert summary_rows(result)[0]["Extras incluidas"] == int(state == "present")
+    item = result.groups[0].documents[0]
+    if linked:
+        assert item.reconstruction is not None
+        assert len(item.reconstruction.parts) == 3
+        assert all(
+            (amount := p.source.source.get("importe")) is not None
+            and amount.fact.value.state == ValueState(state)
+            for p in item.reconstruction.parts
+        )
+    else:
+        assert item.reconstruction is None
+        assert all(p.amount is not None for p in item.component_parts)

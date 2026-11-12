@@ -42,7 +42,10 @@ def summary_rows(report: AnnualReport) -> list[dict[str, Any]]:
         docs = g.documents
 
         def count_bucket(bucket: Bucket) -> int:
-            return sum(any(p.bucket == bucket for p in d.component_parts) for d in docs)
+            return sum(
+                any(p.bucket == bucket and p.amount is not None for p in d.component_parts)
+                for d in docs
+            )
 
         rows.append(
             {
