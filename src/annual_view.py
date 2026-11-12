@@ -329,6 +329,7 @@ def render_annual(
         "Meses documentados",
         "Ventana",
         "Cobertura",
+        "Aditividad",
         "Total anual",
     )
     st.dataframe([{k: r[k] for k in primary} for r in all_rows], hide_index=True)

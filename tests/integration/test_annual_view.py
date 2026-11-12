@@ -55,3 +55,18 @@ def test_unavailable_annual_reader_does_not_break_other_views(database, monkeypa
     assert not app.exception
     assert any("resumen anual" in e.value for e in app.error)
     assert any(e.value == "Documentos disponibles" for e in app.subheader)
+
+
+def test_rejected_additivity_is_visible_separately_from_missing_contract(database, monkeypatch):
+    from src.annual_summary import annual_summary
+    from tests.unit.test_annual_additivity import record
+
+    report = annual_summary(
+        (record("a", currency="EUR"), record("b", currency="USD")), {}, {}, [], years=(2025, 2025)
+    )
+    monkeypatch.setattr("src.annual_view.load_annual", lambda *args, **kwargs: report)
+    app = page()
+    assert not app.exception
+    rows = next(df.value for df in app.dataframe if "Total anual" in df.value)
+    assert set(rows["Aditividad"]) == {"Aditividad rechazada para este conjunto"}
+    assert set(rows["Total anual"]) == {"No acreditado"}

@@ -21,6 +21,7 @@ from src.salary_reconstruction import (
 
 class Additivity(StrEnum):
     UNACCREDITED = "Aditividad anual no acreditada"
+    REJECTED = "Aditividad rechazada para este conjunto"
     NON_ADDITIVE = "No aditivo con el bruto: componente incluido"
     ACCREDITED = "Aditividad acreditada por contrato"  # No annual producer exists.
 
@@ -59,6 +60,36 @@ class AnnualGroup:
 @dataclass(frozen=True)
 class AnnualReport:
     groups: tuple[AnnualGroup, ...]
+
+
+def _rejection(documents: tuple[AnnualDocument, ...]) -> tuple[str, ...]:
+    """Negative checks only, per original magnitude; never grant additivity.
+
+    A presentation hold is not an economic exclusion. Missing units do not prove
+    incompatibility. Values, filenames and dates are not identity heuristics.
+    """
+    owners: dict[str, set[str]] = {}
+    currencies: dict[str, set[str]] = {}
+    reasons = set()
+    for item in documents:
+        for observation in item.record.document.observations:
+            if observation.magnitude not in ("documentary_gross", "documentary_net"):
+                continue
+            owners.setdefault(observation.observation_id, set()).add(item.record.document_id)
+            if observation.eligibility == "excluded":
+                reasons.add(
+                    "El conjunto incluye una observación con elegibilidad canónica excluded."
+                )
+            currency = observation.value.currency
+            if currency is not None:
+                currencies.setdefault(observation.magnitude, set()).add(currency.code)
+    if any(len(ids) > 1 for ids in owners.values()):
+        reasons.add("Una misma observación se atribuye a documentos lógicos distintos.")
+    if any(len(units) > 1 for units in currencies.values()):
+        reasons.add(
+            "Hay monedas explícitas incompatibles para una misma magnitud; no se convierten."
+        )
+    return tuple(sorted(reasons))
 
 
 def annual_summary(
@@ -149,12 +180,21 @@ def annual_summary(
         )
         if group.year is not None and not months:
             continue
-        groups.append(
-            AnnualGroup(
-                replace(group, absence_certain=group.absence_certain and not uncertain),
-                tuple(items[i] for i in group.document_ids),
-                months,
-                tuple(m for m in group.missing_months if m in months),
-            )
+        group_documents = tuple(items[i] for i in group.document_ids)
+        rejected = _rejection(group_documents)
+        result = AnnualGroup(
+            replace(group, absence_certain=group.absence_certain and not uncertain),
+            group_documents,
+            months,
+            tuple(m for m in group.missing_months if m in months),
         )
+        if rejected:
+            result = replace(
+                result,
+                additivity=Additivity.REJECTED,
+                reason="Total anual no acreditado. Agregación rechazada para este conjunto: "
+                + " ".join(rejected)
+                + " No se elimina ningún documento ni se autoriza automáticamente un subconjunto.",
+            )
+        groups.append(result)
     return AnnualReport(tuple(groups))

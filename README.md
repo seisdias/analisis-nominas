@@ -662,3 +662,8 @@ Doce meses de documentos no certifican un año salarial completo. Se conservan l
 resoluciones A.3, C.3 multipago y las restricciones locales.
 
 [Contrato de agrupación, comparación y aditividad](docs/annual-summary.md).
+
+La tabla distingue **aditividad no acreditada** de **rechazada para este conjunto**.
+El rechazo requiere un impedimento verificable en las observaciones; no se deduce
+por moneda ausente, importes iguales o restricciones meramente visuales. Superar
+estos controles tampoco autoriza una suma anual.

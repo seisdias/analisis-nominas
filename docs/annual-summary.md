@@ -102,3 +102,20 @@ El siguiente paso necesario para sumar exige un contrato de aditividad interdocu
 separado del salario fijo contractual. Antes de activarlo deben revisarse independencia,
 solapamientos, sustituciones, temporalidad, unidad y universo autorizado. C.4.3 no realiza
 esa autorización ni modifica el esquema, las resoluciones o las certificaciones.
+
+## Aditividad no acreditada frente a rechazada
+
+El resumen distingue explícitamente las tres situaciones solicitadas. El estado
+**acreditado** continúa sin productor anual, pues no existe contrato que lo autorice.
+**No acreditada** significa que faltan garantías, no que se haya demostrado duplicidad.
+**Rechazada para este conjunto** identifica un impedimento verificable en el universo
+original de bruto/neto: una observación canónica `excluded`, la misma observación
+atribuida a documentos lógicos distintos o monedas explícitas incompatibles dentro
+de una misma magnitud. No se comparan bruto y neto como si fueran una sola magnitud.
+
+Estos controles negativos no conceden aditividad al superarlos. No se eliminan
+observaciones conflictivas para fabricar un subconjunto sumable. La moneda ausente,
+los valores iguales de observaciones distintas y una restricción de representación
+no se convierten en rechazo económico por sí solos. Ningún diagnóstico modifica la
+certificación, elegibilidad o resolución canónica. La tabla principal y el detalle
+muestran el estado y el motivo; el agregado permanece ausente en ambos casos.
