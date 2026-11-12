@@ -647,3 +647,23 @@ fijo completo ni equivalencia anual. Se conservan los importes ordinarios parcia
 extras y prorratas de B2c. La repetición de partidas no acredita recurrencia; una prorrata
 no acredita por sí sola doce pagas. No se presentan diferencias entre parciales como
 subidas salariales. [Evidencia, resultados y contratos pendientes](docs/salary-accreditation.md).
+
+### Resumen económico por ejercicio (C.4.3)
+
+El Panel de análisis ofrece una tabla anual por denominación documental exacta,
+con meses cubiertos, huecos, tipos de documento, componentes identificados, versiones
+y restricciones. Usa los filtros existentes de Empresa y Periodo. El detalle permite
+consultar bruto/neto individual y abrir la ficha sin perder el contexto.
+
+Los ejercicios agrupan **periodos documentales**, no fechas de cobro ni devengo inferidas.
+La comparación entre ejercicios es documental. No existe un contrato de aditividad anual:
+se muestra **«Total anual no acreditado»**, sin sumar nóminas, bonus ni prorratas al bruto.
+Doce meses de documentos no certifican un año salarial completo. Se conservan las
+resoluciones A.3, C.3 multipago y las restricciones locales.
+
+[Contrato de agrupación, comparación y aditividad](docs/annual-summary.md).
+
+La tabla distingue **aditividad no acreditada** de **rechazada para este conjunto**.
+El rechazo requiere un impedimento verificable en las observaciones; no se deduce
+por moneda ausente, importes iguales o restricciones meramente visuales. Superar
+estos controles tampoco autoriza una suma anual.

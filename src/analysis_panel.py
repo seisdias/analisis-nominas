@@ -8,6 +8,7 @@ import streamlit as st
 
 from src.analysis_context import AnalysisContext, ContextFilters, build_context, parse_period
 from src.analytic_dataset import DocumentCategory, read_analytic_dataset
+from src.annual_view import render_annual
 from src.canonical.values import CanonicalValue, ValueState
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
@@ -208,6 +209,8 @@ def render_panel() -> None:
             st.error('No se pudo recuperar el soporte documental; no se ha cambiado la selección.')
         return
     _summary(context, filters)
+    render_annual(config.database, context, filters, snapshot.documents,
+                  component_restrictions(timeline.table), timeline.points)
     categories = category_visibility({CATEGORY_LABELS[d.document.category] for d in context.documents},
         key='panel_categories', label='Tipos de ingreso visibles')
     st.caption('La visibilidad solo cambia las series y la tabla económica; la cobertura y el inventario '
