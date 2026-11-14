@@ -1,6 +1,7 @@
 """Annual documentary drill-down in the existing contextual panel."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from src.coverage_view import CATEGORIES
 from src.document_concepts import read_document_concepts
 from src.document_explorer import format_amount
 from src.documentary_coverage import CoverageDocument
+from src.documentary_sum import exploratory_sum
 from src.gui_presentation import canonical_value_text, format_period, short_id
 from src.salary_reconciliation import Status
 from src.salary_reconstruction import Bucket
@@ -31,8 +33,30 @@ def load_annual(
 ) -> AnnualReport:
     with open_inspector(database) as inspector:
         sources = {r.document_id: read_document_concepts(inspector, r.document_id) for r in records}
-    return annual_summary(
+        timeline = inspector.timeline_records()
+        doc_relations, obs_relations = inspector.relations()
+    report = annual_summary(
         records, sources, blocked, totals, years=years, period=filters.period, uncertain=uncertain
+    )
+
+    return replace(
+        report,
+        groups=tuple(
+            replace(
+                g,
+                exploratory=tuple(
+                    exploratory_sum(
+                        g,
+                        timeline,
+                        series,
+                        document_relations=doc_relations,
+                        observation_relations=obs_relations,
+                    )
+                    for series in ("Bruto", "Neto")
+                ),
+            )
+            for g in report.groups
+        ),
     )
 
 
@@ -115,8 +139,53 @@ def _open_document() -> None:
         st.session_state["panel_document"] = identity
 
 
+def _exploratory(group: AnnualGroup) -> None:
+    st.subheader("Suma documental exploratoria")
+    st.caption(
+        "Suma aritmética de documentos seleccionados. No acredita el ingreso total del ejercicio, la fecha de cobro ni el salario fijo contractual"
+    )
+    rows = []
+    for result in group.exploratory:
+        amount = (
+            format(result.amount, "f").replace(".", ",") + " " + str(result.currency)
+            if result.amount is not None
+            else "No disponible"
+        )
+        rows.append(
+            {
+                "Magnitud": result.series,
+                "Suma documental": amount,
+                "Estado": result.status,
+                "Incluidos": len(result.included),
+                "Excluidos": len(result.excluded),
+                "Meses incluidos": ", ".join(f"{m:02d}" for m in result.months) or "Ninguno",
+            }
+        )
+    st.dataframe(rows, hide_index=True)
+    st.caption(
+        "Cobertura documental parcial o completa no acredita cobertura económica. No se añaden conceptos al bruto ni se comparan salarios anuales."
+    )
+    with st.expander("Documentos incluidos, exclusiones y fórmula"):
+        for result in group.exploratory:
+            st.write(
+                result.series + ": suma exacta de las observaciones indicadas, una por documento."
+            )
+            st.dataframe(
+                [
+                    {"Documento": i, "Estado": "Incluido", "Motivo / observación": o}
+                    for i, o in zip(result.included, result.observations)
+                ]
+                + [
+                    {"Documento": i, "Estado": "Excluido", "Motivo / observación": reason}
+                    for i, reason in result.excluded
+                ],
+                hide_index=True,
+            )
+
+
 def _detail(group: AnnualGroup, records: Mapping[str, dict[str, Any]]) -> None:
     st.info(group.reason)
+    _exploratory(group)
     st.caption(
         "Importes individuales del periodo documental. No equivalen a pagos del ejercicio ni a salario anual. Los componentes están incluidos en sus documentos, no son pagos adicionales."
     )

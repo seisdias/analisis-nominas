@@ -667,3 +667,9 @@ La tabla distingue **aditividad no acreditada** de **rechazada para este conjunt
 El rechazo requiere un impedimento verificable en las observaciones; no se deduce
 por moneda ausente, importes iguales o restricciones meramente visuales. Superar
 estos controles tampoco autoriza una suma anual.
+
+El detalle del **Resumen económico por ejercicio** incluye una **Suma documental
+exploratoria**, con bruto/neto independientes, documentos incluidos y excluidos,
+meses y motivos. Solo suma totales certificados con moneda canónica acreditada y
+sin bloqueos documentales. No es un total anual acreditado ni salario fijo
+contractual; véanse los [límites y reglas](docs/annual-summary.md#suma-documental-exploratoria-c44-a).
