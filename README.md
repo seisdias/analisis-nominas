@@ -673,3 +673,10 @@ exploratoria**, con bruto/neto independientes, documentos incluidos y excluidos,
 meses y motivos. Solo suma totales certificados con moneda canónica acreditada y
 sin bloqueos documentales. No es un total anual acreditado ni salario fijo
 contractual; véanse los [límites y reglas](docs/annual-summary.md#suma-documental-exploratoria-c44-a).
+
+C.4.4-B permite acreditar **solo el neto** del formato INSIS4 revisado cuando el PDF
+original rotula explícitamente el líquido en EUROS y coincide con su hecho
+certificado. Se verifica huella, versión y página mediante las fuentes del
+manifiesto de ingesta existente; no se altera la moneda canónica. La prueba queda
+visible en la procedencia de la suma. El bruto y los formatos sin evidencia
+aplicable siguen bloqueados; no se infiere EUR por país ni por fecha.

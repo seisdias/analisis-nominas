@@ -15,6 +15,7 @@ from src.coverage_view import CATEGORIES
 from src.document_concepts import read_document_concepts
 from src.document_explorer import format_amount
 from src.documentary_coverage import CoverageDocument
+from src.documentary_currency import attach_currency, source_roots
 from src.documentary_sum import exploratory_sum
 from src.gui_presentation import canonical_value_text, format_period, short_id
 from src.salary_reconciliation import Status
@@ -34,6 +35,7 @@ def load_annual(
     with open_inspector(database) as inspector:
         sources = {r.document_id: read_document_concepts(inspector, r.document_id) for r in records}
         timeline = inspector.timeline_records()
+        attach_currency(inspector, timeline, sources, source_roots())
         doc_relations, obs_relations = inspector.relations()
     report = annual_summary(
         records, sources, blocked, totals, years=years, period=filters.period, uncertain=uncertain
@@ -178,6 +180,32 @@ def _exploratory(group: AnnualGroup) -> None:
                 + [
                     {"Documento": i, "Estado": "Excluido", "Motivo / observación": reason}
                     for i, reason in result.excluded
+                ],
+                hide_index=True,
+            )
+
+        proofs = [e for result in group.exploratory for e in result.currency_evidence]
+        if proofs:
+            st.caption(
+                "Moneda acreditada para esta suma mediante evidencia PDF local. La moneda canónica y las certificaciones originales no se modifican."
+            )
+            st.dataframe(
+                [
+                    {
+                        "Documento": e.document_id,
+                        "Versión": e.version_id,
+                        "Extracción": e.extraction_id,
+                        "Observación": e.observation_id,
+                        "Hecho": e.fact_id,
+                        "Página": e.page,
+                        "Ámbito": "Solo neto documental",
+                        "Moneda": e.currency.code,
+                        "Evidencia": "LIQUIDO TOTAL A PERCIBIR (A-B) EUROS",
+                        "SHA PDF": e.file_sha256,
+                        "SHA texto": e.text_sha256,
+                        "Contrato": e.contract,
+                    }
+                    for e in proofs
                 ],
                 hide_index=True,
             )

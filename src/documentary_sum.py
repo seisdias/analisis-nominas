@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from src.annual_summary import AnnualGroup
 from src.canonical.values import ExactDecimal
+from src.documentary_currency import CurrencyEvidence
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class DocumentarySum:
     excluded: tuple[tuple[str, str], ...]
     months: tuple[int, ...]
     observations: tuple[str, ...]
+    currency_evidence: tuple[CurrencyEvidence, ...] = ()
 
 
 def exploratory_sum(
@@ -48,6 +50,7 @@ def exploratory_sum(
             owners.setdefault(row["observation_id"], set()).add(row["document_id"])
     candidates: dict[str, tuple[Decimal, str, str, int]] = {}
     excluded = {}
+    proofs: dict[str, CurrencyEvidence] = {}
     for identity, item in sorted({d.record.document_id: d for d in group.documents}.items()):
         matches = []
         for row in rows:
@@ -69,7 +72,25 @@ def exploratory_sum(
             value = row["value"]
             obs = row.get("observation_id")
             amount = value.get("amount")
+            currency = value.get("currency")
+            proof = row.get("currency_evidence")
             if (
+                isinstance(proof, CurrencyEvidence)
+                and proof.document_id == identity
+                and proof.version_id == version
+                and proof.observation_id == obs
+                and proof.scope == ("documentary_net" if series == "Neto" else "documentary_gross")
+                and proof.amount == amount
+            ):
+                if currency is None:
+                    currency = proof.currency
+                    proofs[identity] = proof
+                elif currency != proof.currency:
+                    reason = "Evidencia monetaria contradictoria"
+
+            if reason:
+                pass
+            elif (
                 row.get("document_status") != "certified"
                 or value.get("status") != "certified"
                 or not isinstance(amount, ExactDecimal)
@@ -82,13 +103,13 @@ def exploratory_sum(
                 reason = "Soporte incompatible con la versión autorizada"
             elif obs in blocked_obs or len(owners.get(obs, ())) != 1:
                 reason = "Observación relacionada o compartida: posible doble cómputo"
-            elif value.get("currency") is None:
+            elif currency is None:
                 reason = "Moneda canónica no acreditada"
             else:
                 assert item.record.month is not None
                 candidates[identity] = (
                     amount.to_decimal(),
-                    value["currency"].code,
+                    currency.code,
                     obs,
                     item.record.month,
                 )
@@ -127,4 +148,5 @@ def exploratory_sum(
         tuple(sorted(excluded.items())),
         tuple(sorted({v[3] for v in candidates.values()})),
         tuple(v[2] for v in candidates.values()),
+        tuple(proofs[i] for i in candidates if i in proofs),
     )
