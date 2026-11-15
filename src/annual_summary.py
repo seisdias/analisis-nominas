@@ -8,6 +8,7 @@ from typing import Any
 from src.analysis_context import ContextFilters, Period, build_context
 from src.document_concepts import DocumentConcepts
 from src.documentary_coverage import CompanyYearCoverage, CoverageDocument, summarize_coverage
+from src.documentary_sum import DocumentarySum
 from src.economic_components import ComponentPoint, component_extraction, project_components
 from src.income_evolution import project_income
 from src.salary_reconstruction import (
@@ -50,6 +51,7 @@ class AnnualGroup:
     missing_months: tuple[int, ...]
     additivity: Additivity = Additivity.UNACCREDITED
     aggregate: None = None
+    exploratory: tuple[DocumentarySum, ...] = ()
     reason: str = (
         "Total anual no acreditado. No existe contrato de aditividad entre documentos que "
         "acredite independencia, compatibilidad temporal y unidad común. "

@@ -119,3 +119,64 @@ los valores iguales de observaciones distintas y una restricción de representac
 no se convierten en rechazo económico por sí solos. Ningún diagnóstico modifica la
 certificación, elegibilidad o resolución canónica. La tabla principal y el detalle
 muestran el estado y el motivo; el agregado permanece ausente en ambos casos.
+
+## Suma documental exploratoria (C.4.4-A)
+
+El detalle de empresa/ejercicio ofrece bruto y neto por separado como suma
+aritmética de los documentos seleccionados. Este contrato de presentación no
+modifica `evidence_only`, no acredita un total anual ni un salario fijo contractual.
+No requiere doce meses, no imputa fechas de cobro o devengo y no añade componentes
+ya incluidos en los totales. La fórmula y las observaciones participantes son
+consultables junto a todas las exclusiones.
+
+Solo admite un total individual certificado por documento, con soporte en una
+versión única o autorizada por A.3 y moneda canónica conocida. Reutiliza las
+restricciones C.3 del contexto completo. Las relaciones registradas distintas de
+`complements` se bloquean conservadoramente en ambos extremos, incluso cuando uno
+queda fuera del filtro: no selecciona un ganador ni resuelve sustituciones.
+Una observación compartida por documentos distintos tampoco se suma.
+
+Los resultados son `calculable`, `partial` (subconjunto con exclusiones), `blocked`
+(sin subconjunto admisible) o `empty` (grupo sin documentos). Las monedas conocidas
+incompatibles bloquean todos los candidatos de esa magnitud; no se elige una moneda.
+Los importes sin moneda, ausentes o no fiables quedan excluidos, nunca convertidos
+en cero. Ceros y negativos documentados son válidos. Se calcula con `Decimal`
+sin redondeo implícito; la vista muestra la precisión disponible y el código de
+moneda acreditado. No se producen comparaciones porcentuales entre ejercicios.
+
+«Total anual no acreditado» permanece independiente. La ausencia de moneda exige
+evidencia y tratamiento canónico acreditado fuera de este incremento; la convención
+EUR de otras vistas no desbloquea estas sumas.
+
+## Moneda documental localizada en PDF (C.4.4-B)
+
+La suma exploratoria puede usar evidencia monetaria local sin cambiar `currency`
+en SQLite. El contrato `insis-explicit-net-currency/c4.4b-v1` admite exclusivamente
+el rótulo **LIQUIDO TOTAL A PERCIBIR (A-B) EUROS**, con su importe explícito, en el
+formato revisado de `InsisParser`. No extiende EUR al bruto, a otras columnas ni al
+documento entero. Una cabecera monetaria genérica requiere otro contrato de ámbito
+revisado; este incremento no la interpreta. Tampoco utiliza cifras equivalentes
+rotuladas PTA para deducir EUR del importe situado en otra columna.
+
+La comprobación exige una sola versión y página, revisión conocida del extractor,
+hecho neto presente y certificado, coincidencia decimal exacta entre ese hecho y la
+cifra rotulada, referencias a su página y ausencia de menciones monetarias
+contradictorias. Conserva documento, versión, extracción, observación, hecho,
+página, SHA del PDF y SHA del texto revisado. Las versiones alternativas no se
+seleccionan mediante esta vía. Los demás contratos multiversión se conservan.
+
+Se reutiliza **en lectura** `data/private/canonical-build.json` para localizar las
+fuentes del corpus. Sus rutas solo sirven para encontrar el archivo: su SHA debe
+coincidir con el registrado en SQLite. No se crea manifiesto privado ni se modifica
+configuración. Si falta el manifiesto, el PDF, la página o la evidencia aplicable,
+no se añade moneda. Los ficheros se leen y verifican de nuevo, sin caché documental.
+La prueba monetaria se adjunta en memoria a la suma; los valores canónicos y las
+certificaciones siguen intactos. La procedencia se consulta en el desplegable del
+resumen y no expone rutas privadas.
+
+Diagnóstico del formato: `InsisParser` reconoce `EUROS`/`PTA` para localizar el
+líquido, pero el modelo normalizado no conserva la moneda. La ingesta invoca
+`adapt_nomina` sin el argumento monetario opcional. La interpretación posterior
+copia el hecho sin moneda; no hay una pérdida adicional en la presentación.
+Para ampliar el desbloqueo se necesita evidencia explícita aplicable a cada
+magnitud y versión, no la nacionalidad, el año ni una declaración general de EUR.

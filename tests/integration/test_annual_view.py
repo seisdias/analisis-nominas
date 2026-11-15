@@ -70,3 +70,37 @@ def test_rejected_additivity_is_visible_separately_from_missing_contract(databas
     rows = next(df.value for df in app.dataframe if "Total anual" in df.value)
     assert set(rows["Aditividad"]) == {"Aditividad rechazada para este conjunto"}
     assert set(rows["Total anual"]) == {"No acreditado"}
+
+
+def test_exploratory_sum_is_visible_without_promoting_annual_total(database):
+    app = page()
+    app.selectbox(key="panel_company").select("Empresa Beta")
+    app.text_input(key="panel_period").set_value("2025").run()
+    app.selectbox(key="annual_group").select(("Empresa Beta", 2025)).run()
+    assert not app.exception
+    assert any(x.value == "Suma documental exploratoria" for x in app.subheader)
+    rows = next(df.value for df in app.dataframe if "Suma documental" in df.value)
+    assert set(rows["Magnitud"]) == {"Bruto", "Neto"}
+    assert any("No acredita el ingreso total" in x.value for x in app.caption)
+    annual = next(df.value for df in app.dataframe if "Total anual" in df.value)
+    assert set(annual["Total anual"]) == {"No acreditado"}
+
+
+def test_exploratory_numeric_demo_uses_synthetic_values_only():
+    from streamlit.testing.v1 import AppTest
+
+    def demo():
+        from dataclasses import replace
+
+        from src.annual_view import _exploratory
+        from tests.unit.test_documentary_sum import calculate, example
+
+        group, rows = example()
+        _exploratory(replace(group, exploratory=tuple(
+            calculate(group, rows, series) for series in ("Bruto", "Neto"))))
+
+    app = AppTest.from_function(demo).run()
+    assert not app.exception
+    table = app.dataframe[0].value
+    assert list(table["Suma documental"]) == ["191,34 EUR", "191,34 EUR"]
+    assert list(table["Incluidos"]) == [2, 2]

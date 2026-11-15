@@ -37,6 +37,18 @@ class CanonicalInspector:
         self._connection = connection
         self._repo = EconomicRepository(connection)
 
+    def relations(self) -> tuple[tuple[tuple[str, str, str], ...], tuple[tuple[str, str, str], ...]]:
+        """Read registered relation endpoints through the existing repository."""
+        from src.persistence.relations import RelationRepository
+
+        repo = RelationRepository(self._connection)
+        return (
+            tuple((r.source_document_id, r.target_document_id, r.relation_type)
+                  for r in repo.list_document_relations()),
+            tuple((r.source_observation_id, r.target_observation_id, r.relation_type)
+                  for r in repo.list_observation_relations()),
+        )
+
     def summary(self) -> dict[str, Any]:
         tables = ('logical_documents', 'document_versions', 'documentary_facts',
                   'assessments', 'economic_observations')
