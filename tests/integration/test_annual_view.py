@@ -96,11 +96,52 @@ def test_exploratory_numeric_demo_uses_synthetic_values_only():
         from tests.unit.test_documentary_sum import calculate, example
 
         group, rows = example()
-        _exploratory(replace(group, exploratory=tuple(
-            calculate(group, rows, series) for series in ("Bruto", "Neto"))))
+        _exploratory(
+            replace(
+                group,
+                exploratory=tuple(calculate(group, rows, series) for series in ("Bruto", "Neto")),
+            )
+        )
 
     app = AppTest.from_function(demo).run()
     assert not app.exception
     table = app.dataframe[0].value
     assert list(table["Suma documental"]) == ["191,34 EUR", "191,34 EUR"]
     assert list(table["Incluidos"]) == [2, 2]
+
+
+def test_graphic_currency_provenance_and_net_only_sum_are_visible(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    from tests.unit.test_exceltic_currency import evidence
+
+    proof = evidence(monkeypatch)
+    assert proof is not None
+
+    def screen(proof):
+        from dataclasses import replace
+
+        from src.annual_view import _exploratory
+        from tests.unit.test_documentary_sum import calculate, example
+
+        group, rows = example(amounts=(123456,), currency=None)
+        rows[1]["currency_evidence"] = replace(
+            proof,
+            document_id="0",
+            version_id=rows[1]["source_version_ids"][0],
+            observation_id="0-Neto",
+        )
+        _exploratory(
+            replace(
+                group,
+                exploratory=tuple(calculate(group, rows, series) for series in ("Bruto", "Neto")),
+            )
+        )
+
+    app = AppTest.from_function(screen, args=(proof,)).run()
+    assert not app.exception
+    sums = app.dataframe[0].value
+    assert list(sums["Estado"]) == ["blocked", "calculable"]
+    trace = next(d.value for d in app.dataframe if "SHA símbolo" in d.value)
+    assert trace.iloc[0]["Contrato"] == "exceltic-graphic-net-currency/c4.5-v1"
+    assert "símbolo gráfico" in trace.iloc[0]["Evidencia"]

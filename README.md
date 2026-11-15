@@ -680,3 +680,9 @@ certificado. Se verifica huella, versión y página mediante las fuentes del
 manifiesto de ingesta existente; no se altera la moneda canónica. La prueba queda
 visible en la procedencia de la suma. El bruto y los formatos sin evidencia
 aplicable siguen bloqueados; no se infiere EUR por país ni por fecha.
+
+C.4.5 amplía la evidencia local al **símbolo € gráfico junto al neto de Exceltic**:
+verifica el objeto de imagen, su ubicación respecto al rótulo del líquido y la
+coincidencia exacta con el hecho certificado. Desbloquea siete netos adicionales,
+sin extender la moneda al bruto ni alterar SQLite. La procedencia muestra la huella
+y localización del símbolo; los casos sin evidencia aplicable siguen bloqueados.

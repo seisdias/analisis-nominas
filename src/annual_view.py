@@ -200,7 +200,11 @@ def _exploratory(group: AnnualGroup) -> None:
                         "Página": e.page,
                         "Ámbito": "Solo neto documental",
                         "Moneda": e.currency.code,
-                        "Evidencia": "LIQUIDO TOTAL A PERCIBIR (A-B) EUROS",
+                        "Evidencia": e.label,
+                        "SHA símbolo": e.symbol_sha256 or "No aplica: rótulo textual",
+                        "Localización símbolo PDF": str(e.symbol_box)
+                        if e.symbol_box
+                        else "No aplica",
                         "SHA PDF": e.file_sha256,
                         "SHA texto": e.text_sha256,
                         "Contrato": e.contract,

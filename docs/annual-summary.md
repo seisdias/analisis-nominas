@@ -180,3 +180,32 @@ líquido, pero el modelo normalizado no conserva la moneda. La ingesta invoca
 copia el hecho sin moneda; no hay una pérdida adicional en la presentación.
 Para ampliar el desbloqueo se necesita evidencia explícita aplicable a cada
 magnitud y versión, no la nacionalidad, el año ni una declaración general de EUR.
+
+## Símbolo gráfico junto al neto Exceltic (C.4.5)
+
+`exceltic-graphic-net-currency/c4.5-v1` reconoce exclusivamente el símbolo € gráfico
+revisado de 18 × 29 píxeles RGB, mediante SHA del contenido de imagen decodificado,
+profundidad y espacio de color. Rechaza máscaras o transformaciones de decodificación
+no revisadas. Exige que aparezca debajo del único rótulo «LIQUIDO TOTAL A PERCIBIR»,
+a la derecha del único importe de ese recuadro, con coincidencia decimal exacta con
+el neto certificado. Las tolerancias geométricas son distancias de maquetación PDF,
+no tolerancias monetarias. Un icono en otro campo no acredita moneda del neto.
+
+Reutiliza las comprobaciones de huella del PDF, revisión del extractor, versión
+única, página y hecho de C.4.4-B. Conserva además SHA y coordenadas del símbolo en la
+procedencia visible. No realiza OCR general ni cambia parsers. El bruto permanece
+sin moneda acreditada: la etiqueta gráfica es local al neto, no al documento entero.
+
+La revisión focalizada contrastó texto de las 260 versiones con 16 muestras visuales
+por formato/variantes observadas, y verificó los siete candidatos Exceltic. El símbolo
+es un objeto gráfico que no aparece en la extracción textual; aquí la carencia no
+significa ausencia en el original. Se habilitan siete netos adicionales (Exceltic
+2015), conservando los tres INSIS4 de 2009. No se localizaron evidencias aplicables
+adicionales en Altran, INECO, ALTEN o Coritel; las muestras visuales no mostraron moneda
+junto a los totales ni cabecera de ámbito monetario. Esta conclusión es de cobertura
+de la investigación, no una certificación de ausencia visual de cada PDF.
+
+Para ampliar los casos restantes hace falta un original o evidencia complementaria
+que identifique expresamente moneda y ámbito de aplicación, vinculada al documento
+y versión. Cambiar un parser no recupera un símbolo que no está en la fuente revisada.
+No se autoriza una moneda por país, denominación empresarial, fechas o periodicidad.
