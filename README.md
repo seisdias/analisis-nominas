@@ -46,71 +46,44 @@ y tiene prioridad. No se usa la base legacy como alternativa. La sección
 directorio documental y el resultado de la apertura en solo lectura. Las rutas
 se muestran únicamente en ese diagnóstico y no se registran en logs.
 
-La pantalla permite seleccionar empresa documental exacta, año y mes. «Todas las empresas» incluye documentos con empresa
-ausente o ambigua. Bruto y neto conservan su certificación independiente: los
-importes no certificados, sin observación o ambiguos no muestran un candidato.
-La aplicación trabaja exclusivamente en EUR por decisión del propietario. La
-interfaz presenta los valores certificados en formato español y con símbolo €
-también cuando la moneda canónica es `None`, sin modificar la evidencia documental.
-Una divisa explícita distinta de EUR muestra una inconsistencia, sin conversión ni
-etiquetado en euros. Se conservan los decimales exactos (mínimo dos). No hay sumas, KPIs, gráficos, ingesta ni borrado desde esta pantalla.
-La navegación lateral abre el Explorador. Los filtros se aplican automáticamente
-al cambiar su valor (el año al confirmar o salir del campo), sin botón de actualización.
-Dos contadores muestran documentos lógicos únicos y documentos con bruto y neto
-certificados en los resultados filtrados; no son indicadores salariales. La tabla
-muestra periodo, empresa, bruto y neto, con importes alineados a la derecha. Ordena
-periodos completos de más reciente a más antiguo, después los incompletos, con
-desempate por identificador. Seleccionar una fila muestra su identificador completo
-y la certificación de cada valor. Documentos distintos del mismo periodo permanecen
-separados. La ayuda está en «Cómo interpretar los documentos».
-No se almacenan resultados en caché.
-La consulta recorre el conjunto documental, sin paginación de servidor; está
-pensada para corpus locales.
+## Uso de la interfaz (R.1)
 
-### Panel de análisis contextual (D.1–D.2)
+La barra lateral ofrece exactamente dos páginas:
 
-Abre «Panel de análisis» en la navegación lateral o `/render_panel`. Las pantallas
-anteriores siguen disponibles. No hay selector de modo de análisis: empresa,
-periodo y documento determinan automáticamente el contenido.
+- **Análisis** (inicio): filtros de **Empresa** y **Periodo**, botón **Restablecer
+  filtros**, gráfica **Evolución de la retribución** y tabla **Nóminas**.
+  Periodo admite un año (`2015`), un mes (`09/2022`) o un intervalo
+  (`03/2015 – 09/2015`); vacío muestra todo el histórico. Los filtros se aplican
+  al confirmar el campo. Las opciones avanzadas incluyen documentos incompletos.
+- **Documentos**: explorador existente por empresa, año y mes, ficha con conceptos,
+  versiones, incidencias y trazabilidad. **Cobertura documental** conserva los
+  recuentos y huecos. **Informes y evidencia económica** permite consultar los
+  informes anuales, sumas exploratorias y desgloses con el contexto de Análisis.
 
-- **Empresa:** denominación documental exacta; por defecto, todas.
-- **Periodo:** vacío para histórico completo, `2015` para enero–diciembre,
-  `09/2022` para un mes, `2015–2016` para años completos o
-  `03/2015 – 09/2015` / `01/2015 – 06/2016` para intervalos mensuales inclusivos.
-  Confirma con Intro o al salir del campo. Un periodo inválido muestra un aviso,
-  nunca una consulta más amplia.
-- **Documento:** solo ofrece documentos compatibles, con empresa, periodo,
-  categoría e identificador abreviado. No selecciona el primero automáticamente.
-  Al cambiar los filtros solo se limpia una selección documental incompatible.
-- **Información incompleta:** filtro explícito de empresa o periodo desconocido.
-  Un intervalo fechado exige año y mes conocidos; borra Periodo para localizar
-  documentos sin fecha, sin mezclarlos silenciosamente con un intervalo.
+La gráfica reutiliza la composición retributiva existente: bruto, partidas
+ordinarias identificadas (parciales) y conceptos disponibles. Son puntos, sin
+interpolación ni nuevos agregados. La tabla muestra periodo, empresa, tipo de
+nómina, bruto, neto y solo los componentes disponibles; varias partidas del mismo
+concepto se muestran separadas, sin sumarlas. Un dato desconocido se muestra como
+«—». Los euros son una convención de presentación, no una nueva acreditación de
+moneda. Las restricciones económicas y multiversión se conservan.
 
-Los filtros se combinan por intersección. El contexto efectivo siempre es visible.
-Un documento seleccionado abre una ficha; un mes muestra documentos individuales
-sin gráfica histórica; un intervalo, una empresa o el histórico muestran cobertura,
-categorías, incidencias y evolución cuando hay varios meses. «Volver al contexto»
-conserva empresa y periodo; «Restablecer filtros» devuelve la selección inicial.
-Se conserva únicamente el estado de controles en la sesión, sin caché documental.
+Selecciona un punto de la gráfica, una fila o usa **Consultar nómina → Abrir nómina** para abrir la ficha
+en Documentos. **Volver a Análisis** conserva empresa y periodo. Los identificadores,
+hashes, estados técnicos y contadores documentales se consultan en Documentos.
+No se modifican SQLite ni PDF desde la interfaz.
 
-Los indicadores cuentan documentos y meses, nunca ingresos. Los huecos solo se
-cuentan dentro de una ventana explícita y se marcan inciertos si hay contexto
-incompleto compatible. En todas las empresas, un mes cubierto significa que hay
-algún documento ese mes, no que todas las empresas estén documentadas. El intervalo
-observado no es la duración del contrato ni un periodo de liquidación.
+R.1 no incorpora normalización salarial, activación de conceptos que recalcule
+series, nuevos desgloses bruto/neto ni comparaciones retributivas (R.2), ni el
+popup normalizado (R.3). La implementación histórica se conserva sin página propia.
 
-La gráfica reutiliza C.3: cada importe es individual, conserva multipago y
-`presentation.withheld_document_ids`, y evalúa el contexto completo antes de
-restringir a un documento. La media opcional mantiene sus contratos, no incluye
-meses multipago y no equivale a salario certificado. La ficha muestra los estados
-del inspector, el contexto económico registrado y los hechos por versión y
-extracción, sin resolver versiones ni interpretar conceptos. Las tablas de hechos
-se consultan completas por extracción, sin truncar las ocurrencias de conceptos. Los identificadores completos,
-SHA y relaciones de soporte quedan accesibles en desplegables.
+Las secciones técnicas siguientes documentan contratos y entregas anteriores;
+sus referencias al antiguo panel o a Evolución histórica no son entradas de la
+navegación actual. Los informes disponibles se consultan en Documentos.
 
 ### Evolución histórica documental
 
-La navegación lateral incluye «Evolución histórica». Consulta la misma SQLite y
+La implementación histórica, conservada sin página independiente, consulta la misma SQLite y
 configuración compartida que el explorador, exclusivamente en lectura. Permite
 filtrar empresa documental exacta, intervalo de años desde 2006 y series bruto/neto.
 El extremo temporal corresponde al último periodo documental disponible.

@@ -46,7 +46,7 @@ def load_income(
     return project_income(documents, sources, restrictions, totals)
 
 
-def income_chart(rows: list[dict[str, Any]]) -> alt.Chart | alt.FacetChart:
+def income_chart(rows: list[dict[str, Any]], *, technical: bool = True) -> alt.Chart | alt.FacetChart:
     prepared = [
         dict(
             r,
@@ -93,7 +93,7 @@ def income_chart(rows: list[dict[str, Any]]) -> alt.Chart | alt.FacetChart:
                 "Documento:N",
                 "Hecho:N",
                 "Versión:N",
-            ],
+            ] if technical else ["Periodo del documento:N", "Dato:N", "Importe exacto:N", "Etiqueta original:N"],
         )
         .add_params(selection)
         .properties(height=245)

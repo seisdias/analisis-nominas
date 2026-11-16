@@ -73,8 +73,9 @@ def document_counts(rows: list[dict[str, Any]]) -> tuple[int, int]:
     return len(groups), certified
 
 
-def render_app() -> None:
-    st.title('Análisis de Nóminas')
+def render_app(*, show_title: bool = True) -> None:
+    if show_title:
+        st.title('Documentos')
     st.caption('Explorador documental')
     st.badge(f'Ámbito {PRESENTATION_CURRENCY}', color='blue')
     with st.expander('Configuración y diagnóstico'):
@@ -172,6 +173,11 @@ def render_app() -> None:
                 try:
                     with open_inspector(config.database) as inspector:
                         detail = inspector.document(selected['document_id'])
+                    from src.analysis_panel import _detail, load_panel
+                    snapshot = load_panel(config.database, config.withheld_document_ids)
+                    record = next(d for d in snapshot.coverage if d.document_id == selected['document_id'])
+                    if st.session_state.get('panel_document') != selected['document_id']:
+                        _detail(config.database, record, snapshot)
                     for version in detail['versions']:
                         st.caption('SHA-256 del archivo · ' + short_id(version['version'].version_id))
                         st.code(version['source_file'].sha256, language=None, wrap_lines=True)

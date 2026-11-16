@@ -1,7 +1,7 @@
 """Classification/diagnosis preserve the existing synthetic document navigation."""
 
 from tests.integration import test_document_explorer as fixtures
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import open_document, page
 from tests.integration.test_component_view import seed_components
 from tests.integration.test_concepts_view import add_concepts, standalone
 
@@ -13,7 +13,7 @@ def test_classification_visible_without_new_certification_or_changes(database):
     identity = seed_components(database)
     before = database.read_bytes()
     app = page()
-    app.selectbox(key="panel_document").select(identity).run()
+    open_document(app, identity)
     assert not app.exception
     assert any("Clasificación y conciliación económica" in x.value for x in app.subheader)
     assert any(
@@ -27,7 +27,7 @@ def test_classification_visible_without_new_certification_or_changes(database):
     )
     assert any("1.234,56 €" in str(df.value) for df in app.dataframe)
     app.button(key="panel_back").click().run()
-    assert app.selectbox(key="panel_document").value is None
+    assert app.session_state["panel_document"] is None
     assert database.read_bytes() == before
 
 

@@ -90,7 +90,7 @@ def database(tmp_path, monkeypatch):
 
 
 def screen():
-    app = AppTest.from_file(str(APP)).run()
+    app = AppTest.from_string('from src.document_explorer import render_app\nrender_app()').run()
     assert not app.exception
     return app
 
@@ -99,7 +99,7 @@ def test_companies_and_value_states_read_only(database):
     before = database.read_bytes()
     files = set(database.parent.iterdir())
     app = screen()
-    assert app.title[0].value == 'Análisis de Nóminas'
+    assert app.title[0].value == 'Documentos'
     assert app.selectbox[0].options == ['Todas las empresas', 'Empresa Alfa', 'Empresa Beta']
     table = app.dataframe[0].value
     assert len(table) == 4

@@ -122,8 +122,10 @@ def test_existing_navigation_keeps_explorer_and_adds_timeline(database):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[2]/'app.py')).run()
     assert not app.exception
     assert app.title[0].value == 'Análisis de Nóminas'
-    labels = [getattr(link, 'label', None) for link in app.get('page_link')]
-    assert 'Explorador' in labels and 'Evolución histórica' in labels
+    from tests.integration.test_analysis_panel import reports
+    reports(app)
+    assert any(e.label == 'Cobertura documental' for e in app.expander)
+    assert any(t.value == 'Documentos' for t in app.title)
 
 
 def test_optional_average_keeps_original_chart_and_table(database):
