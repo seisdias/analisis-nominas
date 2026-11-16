@@ -1,6 +1,6 @@
 """Read-only currency evidence for the reviewed INSIS4 net-total label.
 
-No payroll parsing, canonical enrichment or document-wide currency inference.
+Reviewed label/image scopes only; no canonical enrichment or document-wide inference.
 The build manifest locates files only; stored hashes and fact provenance bind them.
 """
 
@@ -21,6 +21,9 @@ from src.canonical_inspection import CanonicalInspector
 from src.document_concepts import DocumentConcepts
 
 INSIS_REVISION = "4366ff51169e02bb417b98fe13f8b1ae7eca7e1bf678ada355a78796e33466d9"
+EXCELTIC_REVISION = "fe24e63f0be084c868041dd92ff7cba6a52b0b11020a43a140e8775fe0ae374c"
+# Visually reviewed 18x29 RGB euro glyph, not a hash of payroll amounts or identity.
+EXCELTIC_EURO_SHA = "fc75dfd59f8d7b41d881f43af982bda90dfe7ea856e1d0d39419e656c2021d27"
 CONTRACT = "insis-explicit-net-currency/c4.4b-v1"
 _NET = re.compile(r"LIQUIDOTOTALAPERCIBIR\(A-B\)EUROS(-?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})$")
 
@@ -39,6 +42,9 @@ class CurrencyEvidence:
     currency: CurrencyCode
     scope: str = "documentary_net"
     contract: str = CONTRACT
+    label: str = "LIQUIDO TOTAL A PERCIBIR (A-B) EUROS"
+    symbol_sha256: str | None = None
+    symbol_box: tuple[float, float, float, float] | None = None
 
 
 def attest_net(
@@ -88,6 +94,105 @@ def attest_net(
     )
 
 
+def attest_exceltic_net(
+    *,
+    document_id: str,
+    version_id: str,
+    extraction_id: str,
+    observation_id: str,
+    fact_id: str,
+    file_sha256: str,
+    parser: str,
+    revision: str,
+    page: int,
+    value: CanonicalValue,
+    text: str,
+    page_data: Any,
+) -> CurrencyEvidence | None:
+    """Exact reviewed glyph beneath the net heading, beside the matching number.
+
+    Geometry tolerances are PDF layout distances, never monetary tolerances.
+    Text-only headers or the same image in another field confer no authority.
+    """
+    if (
+        parser != "ExcelticParser"
+        or revision != EXCELTIC_REVISION
+        or page != 1
+        or value.state != ValueState.PRESENT
+        or not isinstance(value.value, ExactDecimal)
+        or value.currency not in (None, CurrencyCode("EUR"))
+        or re.search(r"\b(?:PTA|PESETAS|USD|GBP|JPY|DOLARES)\b|[$£¥]", text.upper())
+    ):
+        return None
+    words = page_data.extract_words()
+    headings = [
+        words[i : i + 4]
+        for i in range(len(words) - 3)
+        if [w["text"] for w in words[i : i + 4]] == ["LIQUIDO", "TOTAL", "A", "PERCIBIR"]
+    ]
+    if len(headings) != 1:
+        return None
+    heading = headings[0]
+    if max(w["top"] for w in heading) - min(w["top"] for w in heading) > 2:
+        return None
+    left, right = heading[0]["x0"], heading[-1]["x1"]
+    bottom = max(w["bottom"] for w in heading)
+    height = bottom - min(w["top"] for w in heading)
+    if height <= 0:
+        return None
+    icons = []
+    for image in page_data.images:
+        if (
+            tuple(image.get("srcsize", ())) != (18, 29)
+            or image.get("bits") != 8
+            or [getattr(c, "name", None) for c in image.get("colorspace", ())] != ["DeviceRGB"]
+            or image.get("imagemask")
+            or any(k in image["stream"].attrs for k in ("Decode", "Mask", "SMask"))
+        ):
+            continue
+        if sha256(image["stream"].get_data()).hexdigest() == EXCELTIC_EURO_SHA:
+            icons.append(image)
+    if len(icons) != 1:
+        return None
+    icon = icons[0]
+    if not (
+        abs(icon["x0"] - right) <= height
+        and 0 <= icon["top"] - bottom <= 2 * height
+        and 2 * height <= icon["bottom"] - icon["top"] <= 3 * height
+    ):
+        return None
+    numbers = [
+        w
+        for w in words
+        if w["x0"] >= left
+        and w["x1"] <= icon["x0"]
+        and w["top"] >= icon["top"]
+        and w["bottom"] <= icon["bottom"]
+        and re.fullmatch(r"-?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}", w["text"])
+    ]
+    if len(numbers) != 1:
+        return None
+    printed = ExactDecimal(int(numbers[0]["text"].replace(".", "").replace(",", "")), 2)
+    if printed != value.value:
+        return None
+    return CurrencyEvidence(
+        document_id,
+        version_id,
+        extraction_id,
+        observation_id,
+        fact_id,
+        file_sha256,
+        page,
+        sha256(text.encode()).hexdigest(),
+        printed,
+        CurrencyCode("EUR"),
+        contract="exceltic-graphic-net-currency/c4.5-v1",
+        label="LIQUIDO TOTAL A PERCIBIR · símbolo gráfico € junto al neto",
+        symbol_sha256=EXCELTIC_EURO_SHA,
+        symbol_box=(icon["x0"], icon["top"], icon["x1"], icon["bottom"]),
+    )
+
+
 def source_roots() -> dict[str, Path]:
     """Reuse the existing local ingestion manifest, without modifying configuration."""
     from src.canonical_build import BuildError, load_config
@@ -125,7 +230,8 @@ def attach_currency(
         extractions = [
             e
             for e in source.extractions
-            if (e.extractor_name, e.extractor_revision) == ("InsisParser", INSIS_REVISION)
+            if (e.extractor_name, e.extractor_revision)
+            in (("InsisParser", INSIS_REVISION), ("ExcelticParser", EXCELTIC_REVISION))
         ]
         if len(extractions) != 1:
             continue
@@ -170,22 +276,28 @@ def attach_currency(
                 with pdfplumber.open(BytesIO(data)) as pdf:
                     if len(pdf.pages) != 1:
                         continue
-                    text = pdf.pages[0].extract_text() or ""
+                    page_data = pdf.pages[0]
+                    text = page_data.extract_text() or ""
+                    arguments: dict[str, Any] = dict(
+                        document_id=row["document_id"],
+                        version_id=extraction.version_id,
+                        extraction_id=extraction.extraction_id,
+                        observation_id=row["observation_id"],
+                        fact_id=fact.fact_id,
+                        file_sha256=version["source_file"].sha256,
+                        parser=extraction.extractor_name,
+                        revision=extraction.extractor_revision,
+                        page=1,
+                        value=fact.value,
+                        text=text,
+                    )
+                    evidence = (
+                        attest_net(**arguments)
+                        if extraction.extractor_name == "InsisParser"
+                        else attest_exceltic_net(**arguments, page_data=page_data)
+                    )
             except (OSError, ValueError, PdfminerException):
                 continue
-            evidence = attest_net(
-                document_id=row["document_id"],
-                version_id=extraction.version_id,
-                extraction_id=extraction.extraction_id,
-                observation_id=row["observation_id"],
-                fact_id=fact.fact_id,
-                file_sha256=version["source_file"].sha256,
-                parser=extraction.extractor_name,
-                revision=extraction.extractor_revision,
-                page=1,
-                value=fact.value,
-                text=text,
-            )
             if evidence is not None:
                 row["currency_evidence"] = evidence
             break
