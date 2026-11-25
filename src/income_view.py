@@ -1,6 +1,7 @@
 """First ordinary-income comparison within the existing contextual panel."""
 
 from collections.abc import Mapping, Sequence
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +15,17 @@ from src.document_concepts import read_document_concepts
 from src.economic_components import documentary_block
 from src.gui_presentation import canonical_value_text, short_id
 from src.income_evolution import (
+    ADJUSTMENT,
     COMPLETE,
     DISPLAY,
+    EXTRA,
     GROSS,
     INDEPENDENT,
     MONTHLY,
     ORDINARY,
+    PRORATION,
     SERIES,
+    VARIABLE,
     IncomeProjection,
     matching_periods,
     project_income,
@@ -46,7 +51,22 @@ def load_income(
     return project_income(documents, sources, restrictions, totals)
 
 
-def income_chart(rows: list[dict[str, Any]], *, technical: bool = True) -> alt.Chart | alt.FacetChart:
+# Analysis labels only; the projection and documentary vocabulary remain unchanged.
+ANALYSIS_LABELS = {
+    GROSS: "Bruto",
+    ORDINARY: "Retribución ordinaria identificada (parcial)",
+    EXTRA: "Pagas extra incluidas",
+    INDEPENDENT: "Paga extra independiente",
+    PRORATION: "Prorrata de extras",
+    VARIABLE: "Variable",
+    ADJUSTMENT: "Atrasos y ajustes",
+    COMPLETE: "Retribución ordinaria completa",
+    MONTHLY: "Fijo mensual comparable",
+}
+
+
+def income_chart(rows: list[dict[str, Any]], *, technical: bool = True,
+                 period: tuple[str, str] | None = None) -> alt.Chart | alt.FacetChart:
     prepared = [
         dict(
             r,
@@ -62,7 +82,13 @@ def income_chart(rows: list[dict[str, Any]], *, technical: bool = True) -> alt.C
     ]
     selection = alt.selection_point(name="nomina", fields=["Documento"], on="click", toggle=False)
     labels = [DISPLAY[name] for name in SERIES]
-    return (
+    if not technical:
+        prepared = [dict(Fecha=r['Fecha'], Empresa=r['Empresa'], Documento=r['Documento'],
+                         Importe=r['Importe'], **{'Importe exacto': r['Importe exacto'],
+                         'Periodo': r['Periodo del documento'], 'Dato': ANALYSIS_LABELS[r['Componente']]})
+                    for r in sorted(rows, key=lambda r: r['Fecha'])]
+        labels = [ANALYSIS_LABELS[name] for name in SERIES]
+    chart = (
         alt.Chart(alt.Data(values=prepared))
         .mark_point(size=90, filled=True)
         .encode(
@@ -97,8 +123,34 @@ def income_chart(rows: list[dict[str, Any]], *, technical: bool = True) -> alt.C
         )
         .add_params(selection)
         .properties(height=245)
-        .facet(row=alt.Row("Empresa:N", title=None))
     )
+    if technical:
+        return chart.facet(row=alt.Row("Empresa:N", title=None))
+    dates = [r['Fecha'] for r in prepared]
+    bounds = period or ((min(dates), max(dates)) if dates else None)
+    months = 0
+    if bounds:
+        start, end = (date.fromisoformat(value) for value in bounds)
+        months = (end.year - start.year) * 12 + end.month - start.month
+    return chart.encode(
+        x=alt.X('Fecha:T', title='Periodo', sort='ascending',
+            scale=alt.Scale(type='utc', domain=list(bounds)) if bounds else alt.Scale(type='utc'),
+            axis=alt.Axis(format='%m/%Y' if months < 12 else '%Y',
+                          tickCount='month' if months < 12 else 'year',
+                          labelAngle=0, labelOverlap=True, grid=True)),
+        y=alt.Y('Importe:Q', title='Importe (€)', scale=alt.Scale(zero=False)),
+        color=alt.Color('Dato:N', title='Serie',
+            scale=alt.Scale(domain=labels, scheme='tableau10'),
+            legend=alt.Legend(orient='bottom', direction='vertical', columns=2, labelLimit=360,
+                values=[label for label in labels
+                if any(r['Dato'] == label for r in prepared)])),
+        shape=alt.Shape('Empresa:N', title='Empresa',
+            legend=alt.Legend(orient='right', labelLimit=240)
+            if len({r['Empresa'] for r in prepared}) > 1 else None),
+        tooltip=[alt.Tooltip('Periodo:N'), alt.Tooltip('Empresa:N'),
+                 alt.Tooltip('Dato:N', title='Serie'), alt.Tooltip('Importe exacto:N', title='Importe')],
+    ).properties(height=360)
+
 
 
 def _chart_document(key: str) -> None:

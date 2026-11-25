@@ -46,7 +46,7 @@ y tiene prioridad. No se usa la base legacy como alternativa. La sección
 directorio documental y el resultado de la apertura en solo lectura. Las rutas
 se muestran únicamente en ese diagnóstico y no se registran en logs.
 
-## Uso de la interfaz (R.1)
+## Uso de la interfaz (R.1b)
 
 La barra lateral ofrece exactamente dos páginas:
 
@@ -62,7 +62,11 @@ La barra lateral ofrece exactamente dos páginas:
 
 La gráfica reutiliza la composición retributiva existente: bruto, partidas
 ordinarias identificadas (parciales) y conceptos disponibles. Son puntos, sin
-interpolación ni nuevos agregados. La tabla muestra periodo, empresa, tipo de
+interpolación ni nuevos agregados. Se muestran en un único eje temporal: meses
+en ventanas cortas y años en las largas, con periodo exacto al inspeccionar un punto.
+El color distingue series y el símbolo distingue empresas. **Series visibles**
+permite ocultarlas sin eliminar nóminas ni componentes de la tabla.
+La tabla muestra periodo, empresa, tipo de
 nómina, bruto, neto y solo los componentes disponibles; varias partidas del mismo
 concepto se muestran separadas, sin sumarlas. Un dato desconocido se muestra como
 «—». Los euros son una convención de presentación, no una nueva acreditación de

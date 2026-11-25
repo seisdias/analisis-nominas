@@ -1,6 +1,6 @@
 """Contextual Streamlit presentation over existing read-only contracts."""
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -13,7 +13,7 @@ from src.annual_view import render_annual
 from src.canonical.values import CanonicalValue, ValueState
 from src.canonical_inspection import InspectionError, open_inspector
 from src.cli_config import ConfigurationError, load_config
-from src.component_view import component_restrictions, render_components
+from src.component_view import component_restrictions, component_visibility, render_components
 from src.concepts_view import render_concepts
 from src.coverage_view import CATEGORIES, REASONS, _details, render_coverage
 from src.document_explorer import format_amount, render_app
@@ -23,8 +23,8 @@ from src.gui_presentation import (
     format_period,
     short_id,
 )
-from src.income_evolution import DISPLAY, GROSS, INDEPENDENT
-from src.income_view import income_chart, load_income, render_income
+from src.income_evolution import GROSS, INDEPENDENT, SERIES, visible_income
+from src.income_view import ANALYSIS_LABELS, income_chart, load_income, render_income
 from src.payroll_timeline import Timeline, classified_timeline, reset_categories
 
 
@@ -69,7 +69,8 @@ def _clear_document() -> None:
 
 def _reset() -> None:
     reset_categories('panel_categories')
-    for key in ('panel_company', 'panel_period', 'panel_incomplete', 'panel_document', 'panel_average', 'panel_open'):
+    for key in ('panel_company', 'panel_period', 'panel_incomplete', 'panel_document', 'panel_average', 'panel_open',
+                'panel_series', 'panel_series_hidden'):
         st.session_state.pop(key, None)
 
 
@@ -150,7 +151,7 @@ def _economic_rows(snapshot: PanelSnapshot, context: AnalysisContext) -> list[di
 
     return [{'Periodo': format_period(d.year, d.month),
              'Empresa': d.company or 'No disponible',
-             'Tipo de nómina': CATEGORIES[d.document.category],
+             'Tipo': CATEGORIES[d.document.category],
              'Bruto': amount(snapshot.documents[d.document_id]['gross']),
              'Neto': amount(snapshot.documents[d.document_id]['net'])}
             for d in context.documents]
@@ -187,6 +188,8 @@ def render_panel() -> None:
         return
     filters = ContextFilters(company, period, incomplete)
     context = build_context(snapshot.coverage, filters)
+    context = replace(context, documents=tuple(sorted(context.documents,
+        key=lambda d: (d.year or 9999, d.month or 13, d.company or '', d.document_id))))
     by_id = {d.document_id: d for d in context.documents}
     st.session_state['panel_valid_ids'] = tuple(by_id)
     selection_key = sha256(repr((filters, tuple(by_id))).encode()).hexdigest()
@@ -197,33 +200,41 @@ def render_panel() -> None:
         return
     timeline = context_timeline(snapshot, context, filters, config.withheld_document_ids)
     income_rows: list[dict[str, Any]] = []
-    st.subheader('Evolución de la retribución')
-    st.caption('Cuadrados: totales de la nómina; rombos: partidas ordinarias identificadas (parciales); '
-               'círculos: conceptos individuales. No son pagos adicionales al total. '
-               'Importes en euros de presentación; los datos ausentes no se sustituyen por cero.')
+    st.subheader('Evolución de la retribución', help='Cada punto corresponde a un importe de una nómina. '
+        'El desglose parcial no es el sueldo completo. Consulta la nómina para ver sus detalles.')
     try:
         income = load_income(config.database, [d.document for d in context.documents],
                              component_restrictions(timeline.table), timeline.points)
         income_rows = income.rows
         if income.rows:
-            chart_event = st.altair_chart(income_chart(income.rows, technical=False), width='stretch',
-                key='panel_chart_' + selection_key, on_select='rerun', selection_mode='nomina')
-            points = chart_event.get('selection', {}).get('nomina', [])
+            selected_series = component_visibility({r['Componente'] for r in income.rows},
+                key='panel_series', options=SERIES, label='Series visibles',
+                format_func=ANALYSIS_LABELS.__getitem__, reset_label=None)
+            visible = visible_income(income.rows, selected_series)
+            bounds = period or (context.months[0], context.months[-1])
+            dates = tuple(f'{year:04d}-{month:02d}-01' for year, month in bounds)
+            points: list[dict[str, Any]] = []
+            if visible:
+                chart_event = st.altair_chart(income_chart(visible, technical=False,
+                    period=(dates[0], dates[1])), width='stretch',
+                    key='panel_chart_' + selection_key + sha256(repr(selected_series).encode()).hexdigest(),
+                    on_select='rerun', selection_mode='nomina')
+                points = chart_event.get('selection', {}).get('nomina', [])
+            else:
+                st.info('Todas las series están ocultas. Activa alguna para ver la gráfica.')
             if len(points) == 1 and points[0].get('Documento') in by_id:
                 _open_document(points[0]['Documento'])
         else:
-            st.info('No hay importes representables en la gráfica para esta selección.')
-        if income.diagnostics or any(r['Representación'] != 'Representado' for r in timeline.table):
-            st.caption('Algunos importes o desgloses pueden no estar disponibles. Consulta los motivos en Documentos.')
+            st.info('No hay importes disponibles para la gráfica en este periodo.')
     except InspectionError:
         st.error('No se pudo consultar la evolución retributiva. La tabla conserva los importes originales.')
     st.subheader('Nóminas')
     rows = _economic_rows(snapshot, context)
     for component in dict.fromkeys(r['Componente'] for r in income_rows if r['Componente'] not in (GROSS, INDEPENDENT)):
         for identity, row in zip(by_id, rows, strict=True):
-            row[DISPLAY[component]] = '; '.join(r['Importe exacto'] for r in income_rows
+            row[ANALYSIS_LABELS[component]] = '; '.join(r['Importe exacto'] for r in income_rows
                 if r['Documento'] == identity and r['Componente'] == component) or '—'
-    st.caption('Importes originales por nómina. Selecciona una fila para abrir su ficha en Documentos.')
+    st.caption('Ocultar una serie no elimina nóminas. Selecciona una fila para consultar la nómina.')
     event = st.dataframe(rows, hide_index=True, width='stretch', on_select='rerun',
         selection_mode='single-row', key='panel_table_' + selection_key,
         column_config={name: st.column_config.TextColumn(alignment='right') for name in ('Bruto', 'Neto')})

@@ -14,7 +14,7 @@ def test_two_native_pages_and_clean_initial_analysis(database):
     assert app.title[0].value == 'Análisis de Nóminas'
     assert not app.metric
     assert app.text_input(key='panel_period').value == ''
-    assert list(app.dataframe[0].value.columns) == ['Periodo', 'Empresa', 'Tipo de nómina', 'Bruto', 'Neto']
+    assert list(app.dataframe[0].value.columns) == ['Periodo', 'Empresa', 'Tipo', 'Bruto', 'Neto']
     assert not app.code
 
 
@@ -32,7 +32,7 @@ def test_chart_reuses_projection_without_technical_tooltips():
     assert result.rows == original
     assert [r['Importe'] for r in spec['data']['values']] == [r['Importe'] for r in original]
     assert 'aggregate' not in str(spec) and 'interpolate' not in str(spec)
-    tooltips = str(spec['spec']['encoding']['tooltip'])
+    tooltips = str(spec['encoding']['tooltip'])
     assert all(x not in tooltips for x in ('Documento', 'Hecho', 'Versión', 'Fórmula'))
 
 

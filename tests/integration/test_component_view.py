@@ -115,7 +115,8 @@ def test_panel_components_independent_of_categories_coverage_and_navigation(data
     identity = seed_components(database)
     before = database.read_bytes()
     app = page()
-    assert not app.multiselect
+    assert len(app.multiselect) == 1
+    assert app.multiselect[0].label == 'Series visibles'
     assert len(app.get('vega_lite_chart')) == 1
     open_document(app, identity)
     app.checkbox(key='document_reports').check().run()
