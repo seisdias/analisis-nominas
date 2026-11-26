@@ -1,7 +1,7 @@
 """Evidence limits visible in both existing entry points, without changing context."""
 
 from src.income_evolution import project_income
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import page, reports
 from tests.integration.test_income_view import isolated_configuration, seed_ordinary  # noqa: F401
 from tests.unit.test_income_evolution import fixture
 
@@ -23,18 +23,19 @@ def test_evidence_panel_and_document_preserve_context_and_database(tmp_path, mon
     seed_ordinary(path)
     monkeypatch.setenv("ANALISIS_NOMINAS_CANONICAL_DB", str(path))
     before = path.read_bytes()
-    app = page()
+    app = reports(page())
     assert not app.exception
     assert any("Qué falta para acreditar el fijo" in x.label for x in app.expander)
     assert any("Modalidad de pagas" in df.value for df in app.dataframe)
     doc = app.session_state["panel_valid_ids"][0]
-    app.selectbox(key="panel_income_document").select(doc).run()
+    app.selectbox(key="document_income_document").select(doc).run()
     assert any("Requisito" in df.value for df in app.dataframe)
-    app.multiselect(key="panel_income").set_value(["Bruto documental"]).run()
+    app.multiselect(key="document_income").set_value(["Bruto documental"]).run()
     assert any("Requisito" in df.value for df in app.dataframe)
-    app.selectbox(key="panel_document").select(doc).run()
+    app.session_state["panel_document"] = doc
+    app.run()
     assert not app.exception
     assert any("Requisito" in df.value for df in app.dataframe)
     app.button(key="panel_back").click().run()
-    assert app.selectbox(key="panel_document").value is None
+    assert app.session_state["panel_document"] is None
     assert path.read_bytes() == before

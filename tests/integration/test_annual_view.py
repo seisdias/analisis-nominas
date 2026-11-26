@@ -1,7 +1,7 @@
 """Annual drill-down reuses contextual filters and documentary navigation."""
 
 from tests.integration import test_document_explorer as fixtures
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import page, reports
 
 database = fixtures.database
 isolated_configuration = fixtures.isolated_configuration
@@ -9,19 +9,20 @@ isolated_configuration = fixtures.isolated_configuration
 
 def test_annual_view_filters_navigation_and_integrity(database):
     before = database.read_bytes()
-    app = page()
+    app = reports(page())
     assert not app.exception
     assert any(x.value == "Resumen económico por ejercicio" for x in app.subheader)
     assert any("Total anual" in df.value for df in app.dataframe)
-    app.selectbox(key="panel_company").select("Empresa Beta")
-    app.text_input(key="panel_period").set_value("2025").run()
+    app.session_state["panel_company"] = "Empresa Beta"
+    app.session_state["panel_period"] = "2025"
+    app.run()
     app.selectbox(key="annual_group").select(("Empresa Beta", 2025)).run()
     assert not app.exception
     assert any("Bruto individual" in df.value for df in app.dataframe)
     identity = app.session_state["panel_valid_ids"][0]
     app.selectbox(key="annual_document").select(identity).run()
     app.button(key="annual_open").click().run()
-    assert app.selectbox(key="panel_document").value == identity
+    assert app.session_state["panel_document"] == identity
     assert any(x.value == "Ficha documental" for x in app.subheader)
     app.button(key="panel_back").click().run()
     assert app.selectbox(key="panel_company").value == "Empresa Beta"
@@ -30,15 +31,17 @@ def test_annual_view_filters_navigation_and_integrity(database):
 
 
 def test_visual_categories_do_not_remove_annual_inventory(database):
-    app = page()
+    app = reports(page())
 
     def annual():
         return next(df.value for df in app.dataframe if "Total anual" in df.value)
 
     before = annual().copy()
-    app.multiselect(key="panel_categories").set_value([]).run()
+    app.session_state["panel_categories"] = []
+    app.run()
     assert annual().equals(before)
-    app.text_input(key="panel_period").set_value("03/2024").run()
+    app.session_state["panel_period"] = "03/2024"
+    app.run()
     assert not app.exception
     table = annual()
     assert set(table["Ventana"]) == {"03"}
@@ -51,10 +54,10 @@ def test_unavailable_annual_reader_does_not_break_other_views(database, monkeypa
         raise InspectionError("synthetic")
 
     monkeypatch.setattr("src.annual_view.load_annual", fail)
-    app = page()
+    app = reports(page())
     assert not app.exception
     assert any("resumen anual" in e.value for e in app.error)
-    assert any(e.value == "Documentos disponibles" for e in app.subheader)
+    assert any(e.value == "Documentos" for e in app.subheader)
 
 
 def test_rejected_additivity_is_visible_separately_from_missing_contract(database, monkeypatch):
@@ -65,7 +68,7 @@ def test_rejected_additivity_is_visible_separately_from_missing_contract(databas
         (record("a", currency="EUR"), record("b", currency="USD")), {}, {}, [], years=(2025, 2025)
     )
     monkeypatch.setattr("src.annual_view.load_annual", lambda *args, **kwargs: report)
-    app = page()
+    app = reports(page())
     assert not app.exception
     rows = next(df.value for df in app.dataframe if "Total anual" in df.value)
     assert set(rows["Aditividad"]) == {"Aditividad rechazada para este conjunto"}
@@ -73,9 +76,10 @@ def test_rejected_additivity_is_visible_separately_from_missing_contract(databas
 
 
 def test_exploratory_sum_is_visible_without_promoting_annual_total(database):
-    app = page()
-    app.selectbox(key="panel_company").select("Empresa Beta")
-    app.text_input(key="panel_period").set_value("2025").run()
+    app = reports(page())
+    app.session_state["panel_company"] = "Empresa Beta"
+    app.session_state["panel_period"] = "2025"
+    app.run()
     app.selectbox(key="annual_group").select(("Empresa Beta", 2025)).run()
     assert not app.exception
     assert any(x.value == "Suma documental exploratoria" for x in app.subheader)

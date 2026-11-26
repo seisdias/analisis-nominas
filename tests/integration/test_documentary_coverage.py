@@ -96,8 +96,9 @@ def test_page_empty_and_missing_database(tmp_path, monkeypatch):
 def test_navigation_preserves_existing_pages(database):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[2] / 'app.py')).run(timeout=20)
     assert not app.exception
-    labels = {getattr(link, 'label', None) for link in app.get('page_link')}
-    assert {'Explorador', 'Evolución histórica', 'Cobertura documental'} <= labels
+    from tests.integration.test_analysis_panel import reports
+    reports(app)
+    assert any(e.label == 'Cobertura documental' for e in app.expander)
 
 
 def test_page_shows_hold_separately_without_removing_counts(database, monkeypatch):

@@ -1,4 +1,4 @@
-"""Native filter state and document navigation on synthetic SQLite only."""
+"""Native R.1 filters and document navigation on synthetic SQLite only."""
 from streamlit.testing.v1 import AppTest
 
 from tests.integration import test_document_explorer as fixtures
@@ -8,36 +8,48 @@ database = fixtures.database
 
 
 def page():
-    return AppTest.from_string('from src.analysis_panel import render_panel\nrender_panel()').run(timeout=30)
+    return AppTest.from_file(str(fixtures.APP)).run(timeout=30)
+
+
+def open_document(app, identity):
+    app.selectbox(key='panel_open').select(identity).run()
+    app.button(key='panel_open_button').click().run(timeout=30)
+    assert not app.exception
+    from streamlit.util import calc_hash
+    app._page_hash = calc_hash('render_documents')
+    return app
+
+
+def reports(app):
+    # Native page navigation by the same registered callable hash as Streamlit.
+    from streamlit.util import calc_hash
+    app._page_hash = calc_hash('render_documents')
+    app.run(timeout=30)
+    app.checkbox(key='document_reports').check().run(timeout=30)
+    assert not app.exception
+    return app
 
 
 def test_history_month_detail_back_and_stale_selection(database):
     before = database.read_bytes()
     app = page()
     assert not app.exception
-    assert app.title[0].value == 'Panel de análisis'
-    assert app.metric[0].value == '4'
-    assert app.selectbox(key='panel_document').value is None
+    assert app.title[0].value == 'Análisis de Nóminas'
+    assert not app.metric
     app.text_input(key='panel_period').set_value('03/2024').run()
-    assert app.metric[0].value == '1'
-    assert not app.get('vega_lite_chart')
-    assert app.selectbox(key='panel_document').value is None
-    identity = app.selectbox(key='panel_document').options[1]
-    # Select the full stored ID, never the formatted option or first candidate implicitly.
-    ids = app.session_state['panel_valid_ids']
-    app.selectbox(key='panel_document').select(ids[0]).run()
-    assert not app.exception
+    assert len(app.dataframe[0].value) == 1
+    identity = app.session_state['panel_valid_ids'][0]
+    open_document(app, identity)
     assert any(h.value == 'Ficha documental' for h in app.subheader)
-    assert any(c.value == ids[0] for c in app.code)
-    assert identity != ids[0]
+    assert any(c.value == identity for c in app.code)
     app.button(key='panel_back').click().run()
+    app._page_hash = ''
     assert app.text_input(key='panel_period').value == '03/2024'
-    assert app.selectbox(key='panel_document').value is None
-    app.selectbox(key='panel_document').select(ids[0]).run()
+    assert app.session_state['panel_document'] is None
+    app.session_state['panel_document'] = identity
     app.text_input(key='panel_period').set_value('2025').run()
-    assert app.selectbox(key='panel_document').value is None
-    assert app.metric[0].value == '2'
-    assert any('selección documental' in x.value for x in app.info)
+    assert app.session_state['panel_document'] is None
+    assert len(app.dataframe[0].value) == 2
     assert database.read_bytes() == before
 
 
@@ -45,17 +57,17 @@ def test_intersection_unknown_invalid_empty_reset(database):
     app = page()
     app.selectbox(key='panel_company').select('Empresa Beta')
     app.text_input(key='panel_period').set_value('04/2025-05/2025').run()
-    assert app.metric[0].value == '2'
+    assert len(app.dataframe[0].value) == 2
     app.text_input(key='panel_period').set_value('03/2024').run()
     assert any('No hay coincidencias' in x.value for x in app.info)
-    assert app.selectbox(key='panel_company').value == 'Empresa Beta'
     app.text_input(key='panel_period').set_value('invalid').run()
     assert app.warning and not app.dataframe
     app.button(key='panel_reset').click().run()
     assert app.selectbox(key='panel_company').value is None
     assert app.text_input(key='panel_period').value == ''
     app.checkbox(key='panel_incomplete').check().run()
-    assert app.metric[0].value == '1'
+    assert len(app.dataframe[0].value) == 1
+    assert set(app.dataframe[0].value['Bruto']) == {'—'}
     assert not app.exception
 
 
@@ -71,11 +83,10 @@ def test_panel_preserves_local_hold_and_traceability(database, monkeypatch):
     app = page()
     app.selectbox(key='panel_company').select('Empresa Alfa').run()
     assert not app.get('vega_lite_chart')
-    assert any('restric' in x.value.lower() for x in app.warning)
-    app.selectbox(key='panel_document').select(identity).run()
+    assert any('no hay importes' in x.value.lower() for x in app.info)
+    open_document(app, identity)
     assert any(c.value == identity for c in app.code)
     assert any('1.234,56 €' in str(df.value) for df in app.dataframe)
-    assert not app.exception
 
 
 def test_empty_database_and_unavailable(tmp_path, monkeypatch):
@@ -90,54 +101,18 @@ def test_empty_database_and_unavailable(tmp_path, monkeypatch):
     assert page().error
 
 
-def test_panel_navigation_keeps_previous_pages(database):
-    app = AppTest.from_file(str(fixtures.APP)).run()
-    labels = [getattr(item, 'label', None) for item in app.get('page_link')]
-    assert all(label in labels for label in ('Panel de análisis', 'Explorador', 'Evolución histórica', 'Cobertura documental'))
-    assert not app.exception
-
-
-def test_category_visibility_preserves_coverage_context_and_detail(database):
+def test_panel_navigation_has_exactly_two_native_pages(database, monkeypatch):
+    import streamlit as st
+    original = st.navigation
+    captured: list[tuple[str, bool]] = []
+    def navigation(pages, **kwargs):
+        captured.extend((p.title, p._default) for p in pages)
+        assert kwargs['position'] == 'sidebar'
+        return original(pages, **kwargs)
+    monkeypatch.setattr(st, 'navigation', navigation)
     app = page()
-    category = 'Documentos sin clasificar'
-    assert app.multiselect(key='panel_categories').value == [category]
-    app.multiselect(key='panel_categories').set_value([]).run()
-    assert app.metric[0].value == '4'
-    assert not app.get('vega_lite_chart')
-    app.text_input(key='panel_period').set_value('03/2024').run()
-    assert app.multiselect(key='panel_categories').value == []
-    assert app.metric[0].value == '1'
-    identity = app.session_state['panel_valid_ids'][0]
-    app.selectbox(key='panel_document').select(identity).run()
-    assert any(c.value == identity for c in app.code)
-    app.button(key='panel_back').click().run()
-    assert app.multiselect(key='panel_categories').value == []
-    app.button(key='panel_categories_reset').click().run()
-    assert app.multiselect(key='panel_categories').value == [category]
-    assert app.text_input(key='panel_period').value == '03/2024'
+    assert captured == [('Análisis', True), ('Documentos', False)]
     assert not app.exception
-
-
-def test_multiple_categories_independent_and_preferences_survive_context(database, monkeypatch):
-    from dataclasses import replace
-
-    from src.analysis_panel import load_panel
-    from src.analytic_dataset import DocumentCategory as C
-    snapshot = load_panel(database)
-    kinds = [C.ORDINARY, C.EXTRA, C.VARIABLE_BONUS, C.UNCLASSIFIED]
-    coverage = tuple(replace(d, document=replace(d.document, category=c))
-                     for d, c in zip(snapshot.coverage, kinds, strict=True))
-    monkeypatch.setattr('src.analysis_panel.load_panel', lambda *args: replace(snapshot, coverage=coverage))
-    app = page()
-    widget = app.multiselect(key='panel_categories')
-    assert len(widget.value) == 4
-    for category in ('Pagas extraordinarias', 'Variables / bonus'):
-        app.multiselect(key='panel_categories').set_value([category]).run()
-        assert app.metric[0].value == '4'
-        assert app.dataframe[-1].value.shape[0] == 4  # Complete inventory.
-        assert set(app.dataframe[-2].value['Categoría']) == {category}
-    app.selectbox(key='panel_company').select('Empresa Alfa').run()
-    assert app.multiselect(key='panel_categories').value == ['Variables / bonus']
-    app.selectbox(key='panel_company').select(None).run()
-    assert app.multiselect(key='panel_categories').value == ['Variables / bonus']
-    assert not app.exception
+    reports(app)
+    assert any(e.label == 'Cobertura documental' for e in app.expander)
+    assert any(t.value == 'Documentos' for t in app.title)

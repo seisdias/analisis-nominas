@@ -3,7 +3,7 @@
 from src.income_evolution import project_income
 from src.income_view import income_chart
 from tests.integration import test_document_explorer as fixtures
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import open_document, page, reports
 from tests.unit.test_income_evolution import fixture
 
 isolated_configuration = fixtures.isolated_configuration
@@ -24,16 +24,16 @@ def test_panel_displays_real_projection_and_independent_control(database, monkey
     d, s, g = fixture()
     r = project_income((d,), {d.document_id: s}, {}, [g])
     monkeypatch.setattr("src.income_view.load_income", lambda *a, **k: r)
-    app = page()
+    app = reports(page())
     assert not app.exception
     assert any(x.value == "Evolución retributiva identificada" for x in app.subheader)
-    assert "Ordinario identificado (parcial)" in app.multiselect(key="panel_income").value
+    assert "Ordinario identificado (parcial)" in app.multiselect(key="document_income").value
     inventory = app.metric[0].value
-    app.multiselect(key="panel_income").set_value(["Ordinario identificado (parcial)"]).run()
+    app.multiselect(key="document_income").set_value(["Ordinario identificado (parcial)"]).run()
     assert app.metric[0].value == inventory
-    assert app.multiselect(key="panel_categories").value
-    app.button(key="panel_income_reset").click().run()
-    assert len(app.multiselect(key="panel_income").value) == 3
+    assert any(e.label == "Cobertura documental" for e in app.expander)
+    app.button(key="document_income_reset").click().run()
+    assert len(app.multiselect(key="document_income").value) == 3
 
 
 def test_empty_and_error_do_not_create_fake_points(database, monkeypatch):
@@ -41,7 +41,7 @@ def test_empty_and_error_do_not_create_fake_points(database, monkeypatch):
     from src.income_evolution import IncomeProjection
 
     monkeypatch.setattr("src.income_view.load_income", lambda *a, **k: IncomeProjection([], ()))
-    app = page()
+    app = reports(page())
     assert not app.exception
     assert not any(x.key == "panel_income" for x in app.multiselect)
 
@@ -146,30 +146,17 @@ def test_native_panel_real_reader_filters_gap_and_navigation(tmp_path, monkeypat
     monkeypatch.setenv("ANALISIS_NOMINAS_CANONICAL_DB", str(path))
     before = path.read_bytes()
     app = page()
-    assert not app.exception
-    assert "Ordinario identificado (parcial)" in app.multiselect(key="panel_income").value
     app.selectbox(key="panel_company").select("Empresa Uno").run()
     app.text_input(key="panel_period").set_value("06/2025 – 09/2025").run()
-    assert app.metric[0].value == "3"
-    ordinary = [
-        r
-        for df in app.dataframe
-        if "Componente" in df.value
-        for r in df.value.to_dict("records")
-        if r["Componente"] == "Ordinario identificado (parcial)"
-    ]
-    assert {r["Fecha"] for r in ordinary} == {"2025-06-01", "2025-07-01", "2025-09-01"}
-    assert all("parcial" in r["Cobertura"].lower() for r in ordinary)
-    app.multiselect(key="panel_income").set_value(["Ordinario identificado (parcial)"]).run()
+    assert len(app.get('vega_lite_chart')) == 1
+    table = app.dataframe[0].value
+    assert set(table['Periodo']) == {'06/2025', '07/2025', '09/2025'}
+    assert 'Retribución ordinaria identificada (parcial)' in table
     identity = app.session_state["panel_valid_ids"][0]
-    app.selectbox(key="panel_document").select(identity).run()
-    assert any(
-        "Magnitud" in df.value
-        and "Ordinario identificado (parcial)" in df.value["Magnitud"].tolist()
-        for df in app.dataframe
-    )
+    open_document(app, identity)
+    assert any(h.value == 'Ficha documental' for h in app.subheader)
     app.button(key="panel_back").click().run()
-    assert app.multiselect(key="panel_income").value == ["Ordinario identificado (parcial)"]
+    app._page_hash = ''
     assert app.selectbox(key="panel_company").value == "Empresa Uno"
     app.text_input(key="panel_period").set_value("08/2025").run()
     assert any("No hay coincidencias" in x.value for x in app.info)

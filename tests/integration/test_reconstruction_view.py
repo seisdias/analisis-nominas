@@ -1,7 +1,7 @@
 """Read-only integration in the existing document/version navigation."""
 
 from tests.integration import test_document_explorer as fixtures
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import open_document, page
 from tests.integration.test_component_view import seed_components
 from tests.integration.test_concepts_view import add_concepts, standalone
 
@@ -13,7 +13,7 @@ def test_reconstruction_in_document_without_context_mutation(database):
     identity = seed_components(database)
     before = database.read_bytes()
     app = page()
-    app.selectbox(key="panel_document").select(identity).run()
+    open_document(app, identity)
     assert not app.exception
     assert any(x.value == "Reconstrucción retributiva" for x in app.subheader)
     assert any(
@@ -23,7 +23,7 @@ def test_reconstruction_in_document_without_context_mutation(database):
     )
     assert any("No hay cobertura contractual" in x.value for x in app.info)
     app.button(key="panel_back").click().run()
-    assert app.selectbox(key="panel_document").value is None
+    assert app.session_state["panel_document"] is None
     assert database.read_bytes() == before
 
 

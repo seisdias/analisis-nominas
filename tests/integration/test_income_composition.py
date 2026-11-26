@@ -3,7 +3,7 @@ from decimal import Decimal
 from src.income_evolution import project_income
 from src.income_view import income_chart
 from tests.integration import test_analysis_panel
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import page, reports
 from tests.integration.test_income_view import isolated_configuration, seed_ordinary  # noqa: F401
 from tests.unit.test_income_evolution import fixture
 
@@ -23,16 +23,16 @@ def test_gross_explorer_exposes_parts_and_survives_visibility(tmp_path, monkeypa
     path = tmp_path / "synthetic.sqlite"
     seed_ordinary(path)
     monkeypatch.setenv("ANALISIS_NOMINAS_CANONICAL_DB", str(path))
-    app = page()
-    assert app.multiselect(key="panel_income").label == "Datos a analizar"
-    picker = app.selectbox(key="panel_income_document")
+    app = reports(page())
+    assert app.multiselect(key="document_income").label == "Datos a analizar"
+    picker = app.selectbox(key="document_income_document")
     assert picker.value is None
     doc = app.session_state["panel_valid_ids"][0]
     picker.select(doc).run()
     assert not app.exception
     assert any("Partida del documento" in df.value for df in app.dataframe)
-    app.multiselect(key="panel_income").set_value(["Bruto documental"]).run()
-    assert app.selectbox(key="panel_income_document").value == doc
+    app.multiselect(key="document_income").set_value(["Bruto documental"]).run()
+    assert app.selectbox(key="document_income_document").value == doc
     assert any("Partida del documento" in df.value for df in app.dataframe)
 
 
@@ -84,16 +84,16 @@ def test_native_chart_event_opens_correct_document(tmp_path, monkeypatch):
     path = tmp_path / "chart-event.sqlite"
     seed_ordinary(path)
     monkeypatch.setenv("ANALISIS_NOMINAS_CANONICAL_DB", str(path))
-    app = page()
+    app = reports(page())
     identity = app.session_state["panel_valid_ids"][-1]
-    chart = next(c for c in app.get("vega_lite_chart") if c.proto.id.endswith("panel_income_chart"))
+    chart = next(c for c in app.get("vega_lite_chart") if c.proto.id.endswith("document_income_chart"))
     states = app._tree.get_widget_states()
     event = states.widgets.add()
     event.id = chart.proto.id
     event.string_value = json.dumps({"selection": {"nomina": [{"Documento": identity}]}})
     app._run(states)
     assert not app.exception
-    assert app.selectbox(key="panel_income_document").value == identity
+    assert app.selectbox(key="document_income_document").value == identity
     assert any("Partida del documento" in df.value for df in app.dataframe)
 
 
@@ -122,8 +122,8 @@ def test_unknown_concept_and_signed_difference_remain_visible(database, monkeypa
     )
     assert result.compositions[d.document_id].earnings.difference == Decimal("-0.01")
     monkeypatch.setattr("src.income_view.load_income", lambda *a, **k: result)
-    app = page()
-    app.selectbox(key="panel_income_document").select(d.document_id).run()
+    app = reports(page())
+    app.selectbox(key="document_income_document").select(d.document_id).run()
     assert not app.exception
     assert any("Diferencia no explicada" in msg.value for msg in app.markdown)
     assert any(

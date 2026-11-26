@@ -15,7 +15,7 @@ from src.canonical_inspection import open_inspector
 from src.document_concepts import load_document_concepts
 from src.persistence.economics import EconomicRepository
 from tests.integration import test_document_explorer as fixtures
-from tests.integration.test_analysis_panel import page
+from tests.integration.test_analysis_panel import open_document, page
 from tests.unit.test_document_concepts import fact
 
 isolated_configuration = fixtures.isolated_configuration
@@ -121,14 +121,14 @@ def test_panel_keeps_totals_classification_and_navigation(database):
     before=database.read_bytes()
     app=page()
     app.text_input(key='panel_period').set_value('03/2024').run()
-    app.selectbox(key='panel_document').select(identity).run()
+    open_document(app, identity)
     assert not app.exception
     assert any(h.value=='Desglose documental de conceptos' for h in app.subheader)
     assert any('NOMINA_ORDINARIA' in m.value for m in app.markdown)
     assert any('1.234,56 €' in str(d.value) for d in app.dataframe)
     app.button(key='panel_back').click().run()
     assert app.text_input(key='panel_period').value=='03/2024'
-    assert app.selectbox(key='panel_document').value is None
+    assert app.session_state['panel_document'] is None
     assert database.read_bytes()==before
 
 
@@ -148,7 +148,7 @@ def test_scalar_only_does_not_make_empty_document(database):
 def test_panel_multiversion_selection_never_changes_certified_summary(database):
     identity,versions=add_concepts(database,multiple=True)
     app=page()
-    app.selectbox(key='panel_document').select(identity).run()
+    open_document(app, identity)
     def totals():
         return next(d.value for d in app.dataframe if 'Bruto documental' in d.value.columns)
     initial=totals().copy()
